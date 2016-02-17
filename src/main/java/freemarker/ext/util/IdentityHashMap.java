@@ -34,8 +34,7 @@ import java.util.Set;
  */
 public class IdentityHashMap
     extends AbstractMap
-    implements Map, Cloneable, java.io.Serializable
-{
+    implements Map, Cloneable, java.io.Serializable {
 
     public static final long serialVersionUID = 362498820763181265L;
     /**
@@ -51,15 +50,11 @@ public class IdentityHashMap
     /**
      * The table is rehashed when its size exceeds this threshold.  (The
      * value of this field is (int)(capacity * loadFactor).)
-     *
-     * @serial
      */
     private int threshold;
 
     /**
      * The load factor for the hashtable.
-     *
-     * @serial
      */
     private float loadFactor;
 
@@ -81,8 +76,7 @@ public class IdentityHashMap
      * @throws     IllegalArgumentException  if the initial capacity is less
      *               than zero, or if the load factor is nonpositive.
      */
-    public IdentityHashMap(int initialCapacity, float loadFactor)
-    {
+    public IdentityHashMap(int initialCapacity, float loadFactor) {
         if (initialCapacity < 0)
             throw new IllegalArgumentException(
                 "Illegal Initial Capacity: " + initialCapacity);
@@ -104,8 +98,7 @@ public class IdentityHashMap
      * @throws    IllegalArgumentException if the initial capacity is less
      *              than zero.
      */
-    public IdentityHashMap(int initialCapacity)
-    {
+    public IdentityHashMap(int initialCapacity) {
         this(initialCapacity, 0.75f);
     }
 
@@ -113,8 +106,7 @@ public class IdentityHashMap
      * Constructs a new, empty map with a default capacity and load
      * factor, which is <tt>0.75</tt>.
      */
-    public IdentityHashMap()
-    {
+    public IdentityHashMap() {
         this(11, 0.75f);
     }
 
@@ -126,8 +118,7 @@ public class IdentityHashMap
      *
      * @param t the map whose mappings are to be placed in this map.
      */
-    public IdentityHashMap(Map t)
-    {
+    public IdentityHashMap(Map t) {
         this(Math.max(2 * t.size(), 11), 0.75f);
         putAll(t);
     }
@@ -137,8 +128,8 @@ public class IdentityHashMap
      *
      * @return the number of key-value mappings in this map.
      */
-    public int size()
-    {
+    @Override
+    public int size() {
         return count;
     }
 
@@ -147,8 +138,8 @@ public class IdentityHashMap
      *
      * @return <tt>true</tt> if this map contains no key-value mappings.
      */
-    public boolean isEmpty()
-    {
+    @Override
+    public boolean isEmpty() {
         return count == 0;
     }
 
@@ -160,20 +151,17 @@ public class IdentityHashMap
      * @return <tt>true</tt> if this map maps one or more keys to the
      *         specified value.
      */
-    public boolean containsValue(Object value)
-    {
+    @Override
+    public boolean containsValue(Object value) {
         Entry tab[] = table;
 
-        if (value == null)
-        {
-            for (int i = tab.length; i-- > 0;)
+        if (value == null) {
+            for (int i = tab.length; i-- > 0; )
                 for (Entry e = tab[i]; e != null; e = e.next)
                     if (e.value == null)
                         return true;
-        }
-        else
-        {
-            for (int i = tab.length; i-- > 0;)
+        } else {
+            for (int i = tab.length; i-- > 0; )
                 for (Entry e = tab[i]; e != null; e = e.next)
                     if (value.equals(e.value))
                         return true;
@@ -190,19 +178,16 @@ public class IdentityHashMap
      * key.
      * @param key key whose presence in this Map is to be tested.
      */
-    public boolean containsKey(Object key)
-    {
+    @Override
+    public boolean containsKey(Object key) {
         Entry tab[] = table;
-        if (key != null)
-        {
+        if (key != null) {
             int hash = System.identityHashCode(key);
             int index = (hash & 0x7FFFFFFF) % tab.length;
             for (Entry e = tab[index]; e != null; e = e.next)
                 if (e.hash == hash && key == e.key)
                     return true;
-        }
-        else
-        {
+        } else {
             for (Entry e = tab[0]; e != null; e = e.next)
                 if (e.key == null)
                     return true;
@@ -222,20 +207,17 @@ public class IdentityHashMap
      * @return the value to which this map maps the specified key.
      * @param key key whose associated value is to be returned.
      */
-    public Object get(Object key)
-    {
+    @Override
+    public Object get(Object key) {
         Entry tab[] = table;
 
-        if (key != null)
-        {
+        if (key != null) {
             int hash = System.identityHashCode(key);
             int index = (hash & 0x7FFFFFFF) % tab.length;
             for (Entry e = tab[index]; e != null; e = e.next)
                 if ((e.hash == hash) && key == e.key)
                     return e.value;
-        }
-        else
-        {
+        } else {
             for (Entry e = tab[0]; e != null; e = e.next)
                 if (e.key == null)
                     return e.value;
@@ -249,8 +231,7 @@ public class IdentityHashMap
      * with a larger capacity. This method is called automatically when the
      * number of keys in this map exceeds its capacity and load factor.
      */
-    private void rehash()
-    {
+    private void rehash() {
         int oldCapacity = table.length;
         Entry oldMap[] = table;
 
@@ -261,10 +242,8 @@ public class IdentityHashMap
         threshold = (int) (newCapacity * loadFactor);
         table = newMap;
 
-        for (int i = oldCapacity; i-- > 0;)
-        {
-            for (Entry old = oldMap[i]; old != null;)
-            {
+        for (int i = oldCapacity; i-- > 0; ) {
+            for (Entry old = oldMap[i]; old != null; ) {
                 Entry e = old;
                 old = old.next;
 
@@ -287,33 +266,26 @@ public class IdentityHashMap
      *	       also indicate that the IdentityHashMap previously associated
      *	       <tt>null</tt> with the specified key.
      */
-    public Object put(Object key, Object value)
-    {
+    @Override
+    public Object put(Object key, Object value) {
         // Makes sure the key is not already in the IdentityHashMap.
         Entry tab[] = table;
         int hash = 0;
         int index = 0;
 
-        if (key != null)
-        {
+        if (key != null) {
             hash = System.identityHashCode(key);
             index = (hash & 0x7FFFFFFF) % tab.length;
-            for (Entry e = tab[index]; e != null; e = e.next)
-            {
-                if ((e.hash == hash) && key == e.key)
-                {
+            for (Entry e = tab[index]; e != null; e = e.next) {
+                if ((e.hash == hash) && key == e.key) {
                     Object old = e.value;
                     e.value = value;
                     return old;
                 }
             }
-        }
-        else
-        {
-            for (Entry e = tab[0]; e != null; e = e.next)
-            {
-                if (e.key == null)
-                {
+        } else {
+            for (Entry e = tab[0]; e != null; e = e.next) {
+                if (e.key == null) {
                     Object old = e.value;
                     e.value = value;
                     return old;
@@ -322,8 +294,7 @@ public class IdentityHashMap
         }
 
         modCount++;
-        if (count >= threshold)
-        {
+        if (count >= threshold) {
             // Rehash the table if the threshold is exceeded
             rehash();
 
@@ -347,21 +318,18 @@ public class IdentityHashMap
      *	       also indicate that the map previously associated <tt>null</tt>
      *	       with the specified key.
      */
-    public Object remove(Object key)
-    {
+    @Override
+    public Object remove(Object key) {
         Entry tab[] = table;
 
-        if (key != null)
-        {
+        if (key != null) {
             int hash = System.identityHashCode(key);
             int index = (hash & 0x7FFFFFFF) % tab.length;
 
             for (Entry e = tab[index], prev = null;
                 e != null;
-                prev = e, e = e.next)
-            {
-                if ((e.hash == hash) && key == e.key)
-                {
+                prev = e, e = e.next) {
+                if ((e.hash == hash) && key == e.key) {
                     modCount++;
                     if (prev != null)
                         prev.next = e.next;
@@ -374,15 +342,11 @@ public class IdentityHashMap
                     return oldValue;
                 }
             }
-        }
-        else
-        {
+        } else {
             for (Entry e = tab[0], prev = null;
                 e != null;
-                prev = e, e = e.next)
-            {
-                if (e.key == null)
-                {
+                prev = e, e = e.next) {
+                if (e.key == null) {
                     modCount++;
                     if (prev != null)
                         prev.next = e.next;
@@ -408,11 +372,10 @@ public class IdentityHashMap
      *
      * @param t Mappings to be stored in this map.
      */
-    public void putAll(Map t)
-    {
+    @Override
+    public void putAll(Map t) {
         Iterator i = t.entrySet().iterator();
-        while (i.hasNext())
-        {
+        while (i.hasNext()) {
             Map.Entry e = (Map.Entry) i.next();
             put(e.getKey(), e.getValue());
         }
@@ -421,11 +384,11 @@ public class IdentityHashMap
     /**
      * Removes all mappings from this map.
      */
-    public void clear()
-    {
+    @Override
+    public void clear() {
         Entry tab[] = table;
         modCount++;
-        for (int index = tab.length; --index >= 0;)
+        for (int index = tab.length; --index >= 0; )
             tab[index] = null;
         count = 0;
     }
@@ -436,14 +399,12 @@ public class IdentityHashMap
      *
      * @return a shallow copy of this map.
      */
-    public Object clone()
-    {
-        try
-        {
+    @Override
+    public Object clone() {
+        try {
             IdentityHashMap t = (IdentityHashMap) super.clone();
             t.table = new Entry[table.length];
-            for (int i = table.length; i-- > 0;)
-            {
+            for (int i = table.length; i-- > 0; ) {
                 t.table[i] =
                     (table[i] != null) ? (Entry) table[i].clone() : null;
             }
@@ -452,9 +413,7 @@ public class IdentityHashMap
             t.values = null;
             t.modCount = 0;
             return t;
-        }
-        catch (CloneNotSupportedException e)
-        {
+        } catch (CloneNotSupportedException e) {
             // this shouldn't happen, since we are Cloneable
             throw new InternalError();
         }
@@ -477,32 +436,31 @@ public class IdentityHashMap
      *
      * @return a set view of the keys contained in this map.
      */
-    public Set keySet()
-    {
-        if (keySet == null)
-        {
+    @Override
+    public Set keySet() {
+        if (keySet == null) {
             keySet = new AbstractSet()
             {
-                public Iterator iterator()
-                {
+                @Override
+                public Iterator iterator() {
                     return getHashIterator(KEYS);
                 }
-                public int size()
-                {
+                @Override
+                public int size() {
                     return count;
                 }
-                public boolean contains(Object o)
-                {
+                @Override
+                public boolean contains(Object o) {
                     return containsKey(o);
                 }
-                public boolean remove(Object o)
-                {
+                @Override
+                public boolean remove(Object o) {
                     int oldSize = count;
                     IdentityHashMap.this.remove(o);
                     return count != oldSize;
                 }
-                public void clear()
-                {
+                @Override
+                public void clear() {
                     IdentityHashMap.this.clear();
                 }
             };
@@ -521,26 +479,25 @@ public class IdentityHashMap
      *
      * @return a collection view of the values contained in this map.
      */
-    public Collection values()
-    {
-        if (values == null)
-        {
+    @Override
+    public Collection values() {
+        if (values == null) {
             values = new AbstractCollection()
             {
-                public Iterator iterator()
-                {
+                @Override
+                public Iterator iterator() {
                     return getHashIterator(VALUES);
                 }
-                public int size()
-                {
+                @Override
+                public int size() {
                     return count;
                 }
-                public boolean contains(Object o)
-                {
+                @Override
+                public boolean contains(Object o) {
                     return containsValue(o);
                 }
-                public void clear()
-                {
+                @Override
+                public void clear() {
                     IdentityHashMap.this.clear();
                 }
             };
@@ -561,19 +518,18 @@ public class IdentityHashMap
      * @return a collection view of the mappings contained in this map.
      * @see java.util.Map.Entry
      */
-    public Set entrySet()
-    {
-        if (entrySet == null)
-        {
+    @Override
+    public Set entrySet() {
+        if (entrySet == null) {
             entrySet = new AbstractSet()
             {
-                public Iterator iterator()
-                {
+                @Override
+                public Iterator iterator() {
                     return getHashIterator(ENTRIES);
                 }
 
-                public boolean contains(Object o)
-                {
+                @Override
+                public boolean contains(Object o) {
                     if (!(o instanceof Map.Entry))
                         return false;
                     Map.Entry entry = (Map.Entry) o;
@@ -588,8 +544,8 @@ public class IdentityHashMap
                     return false;
                 }
 
-                public boolean remove(Object o)
-                {
+                @Override
+                public boolean remove(Object o) {
                     if (!(o instanceof Map.Entry))
                         return false;
                     Map.Entry entry = (Map.Entry) o;
@@ -600,10 +556,8 @@ public class IdentityHashMap
 
                     for (Entry e = tab[index], prev = null;
                         e != null;
-                        prev = e, e = e.next)
-                    {
-                        if (e.hash == hash && e.equals(entry))
-                        {
+                        prev = e, e = e.next) {
+                        if (e.hash == hash && e.equals(entry)) {
                             modCount++;
                             if (prev != null)
                                 prev.next = e.next;
@@ -618,13 +572,13 @@ public class IdentityHashMap
                     return false;
                 }
 
-                public int size()
-                {
+                @Override
+                public int size() {
                     return count;
                 }
 
-                public void clear()
-                {
+                @Override
+                public void clear() {
                     IdentityHashMap.this.clear();
                 }
             };
@@ -633,14 +587,10 @@ public class IdentityHashMap
         return entrySet;
     }
 
-    private Iterator getHashIterator(int type)
-    {
-        if (count == 0)
-        {
+    private Iterator getHashIterator(int type) {
+        if (count == 0) {
             return emptyHashIterator;
-        }
-        else
-        {
+        } else {
             return new HashIterator(type);
         }
     }
@@ -648,23 +598,21 @@ public class IdentityHashMap
     /**
      * IdentityHashMap collision list entry.
      */
-    private static class Entry implements Map.Entry
-    {
+    private static class Entry implements Map.Entry {
         int hash;
         Object key;
         Object value;
         Entry next;
 
-        Entry(int hash, Object key, Object value, Entry next)
-        {
+        Entry(int hash, Object key, Object value, Entry next) {
             this.hash = hash;
             this.key = key;
             this.value = value;
             this.next = next;
         }
 
-        protected Object clone()
-        {
+        @Override
+        protected Object clone() {
             return new Entry(
                 hash,
                 key,
@@ -674,25 +622,22 @@ public class IdentityHashMap
 
         // Map.Entry Ops
 
-        public Object getKey()
-        {
+        public Object getKey() {
             return key;
         }
 
-        public Object getValue()
-        {
+        public Object getValue() {
             return value;
         }
 
-        public Object setValue(Object value)
-        {
+        public Object setValue(Object value) {
             Object oldValue = this.value;
             this.value = value;
             return oldValue;
         }
 
-        public boolean equals(Object o)
-        {
+        @Override
+        public boolean equals(Object o) {
             if (!(o instanceof Map.Entry))
                 return false;
             Map.Entry e = (Map.Entry) o;
@@ -703,13 +648,13 @@ public class IdentityHashMap
                     : value.equals(e.getValue()));
         }
 
-        public int hashCode()
-        {
+        @Override
+        public int hashCode() {
             return hash ^ (value == null ? 0 : value.hashCode());
         }
 
-        public String toString()
-        {
+        @Override
+        public String toString() {
             return key + "=" + value;
         }
     }
@@ -722,33 +667,27 @@ public class IdentityHashMap
     private static EmptyHashIterator emptyHashIterator =
         new EmptyHashIterator();
 
-    private static class EmptyHashIterator implements Iterator
-    {
+    private static class EmptyHashIterator implements Iterator {
 
-        EmptyHashIterator()
-        {
+        EmptyHashIterator() {
 
         }
 
-        public boolean hasNext()
-        {
+        public boolean hasNext() {
             return false;
         }
 
-        public Object next()
-        {
+        public Object next() {
             throw new NoSuchElementException();
         }
 
-        public void remove()
-        {
+        public void remove() {
             throw new IllegalStateException();
         }
 
     }
 
-    private class HashIterator implements Iterator
-    {
+    private class HashIterator implements Iterator {
         Entry[] table = IdentityHashMap.this.table;
         int index = table.length;
         Entry entry = null;
@@ -762,13 +701,11 @@ public class IdentityHashMap
          */
         private int expectedModCount = modCount;
 
-        HashIterator(int type)
-        {
+        HashIterator(int type) {
             this.type = type;
         }
 
-        public boolean hasNext()
-        {
+        public boolean hasNext() {
             Entry e = entry;
             int i = index;
             Entry t[] = table;
@@ -780,8 +717,7 @@ public class IdentityHashMap
             return e != null;
         }
 
-        public Object next()
-        {
+        public Object next() {
             if (modCount != expectedModCount)
                 throw new ConcurrentModificationException();
 
@@ -795,8 +731,7 @@ public class IdentityHashMap
 
             entry = et;
             index = i;
-            if (et != null)
-            {
+            if (et != null) {
                 Entry e = lastReturned = entry;
                 entry = e.next;
                 return type == KEYS ? e.key : (type == VALUES ? e.value : e);
@@ -804,8 +739,7 @@ public class IdentityHashMap
             throw new NoSuchElementException();
         }
 
-        public void remove()
-        {
+        public void remove() {
             if (lastReturned == null)
                 throw new IllegalStateException();
             if (modCount != expectedModCount)
@@ -816,10 +750,8 @@ public class IdentityHashMap
 
             for (Entry e = tab[index], prev = null;
                 e != null;
-                prev = e, e = e.next)
-            {
-                if (e == lastReturned)
-                {
+                prev = e, e = e.next) {
+                if (e == lastReturned) {
                     modCount++;
                     expectedModCount++;
                     if (prev == null)
@@ -847,8 +779,7 @@ public class IdentityHashMap
      * The key-value mappings are emitted in no particular order.
      */
     private void writeObject(java.io.ObjectOutputStream s)
-        throws java.io.IOException
-    {
+        throws java.io.IOException {
         // Write out the threshold, loadfactor, and any hidden stuff
         s.defaultWriteObject();
 
@@ -859,12 +790,10 @@ public class IdentityHashMap
         s.writeInt(count);
 
         // Write out keys and values (alternating)
-        for (int index = table.length - 1; index >= 0; index--)
-        {
+        for (int index = table.length - 1; index >= 0; index--) {
             Entry entry = table[index];
 
-            while (entry != null)
-            {
+            while (entry != null) {
                 s.writeObject(entry.key);
                 s.writeObject(entry.value);
                 entry = entry.next;
@@ -877,8 +806,7 @@ public class IdentityHashMap
      * deserialize it).
      */
     private void readObject(java.io.ObjectInputStream s)
-        throws java.io.IOException, ClassNotFoundException
-    {
+        throws java.io.IOException, ClassNotFoundException {
         // Read in the threshold, loadfactor, and any hidden stuff
         s.defaultReadObject();
 
@@ -890,21 +818,18 @@ public class IdentityHashMap
         int size = s.readInt();
 
         // Read the keys and values, and put the mappings in the IdentityHashMap
-        for (int i = 0; i < size; i++)
-        {
+        for (int i = 0; i < size; i++) {
             Object key = s.readObject();
             Object value = s.readObject();
             put(key, value);
         }
     }
 
-    int capacity()
-    {
+    int capacity() {
         return table.length;
     }
 
-    float loadFactor()
-    {
+    float loadFactor() {
         return loadFactor;
     }
 }

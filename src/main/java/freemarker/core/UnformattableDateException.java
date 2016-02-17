@@ -20,10 +20,11 @@ import freemarker.template.TemplateDateModel;
 
 /**
  * Thrown when a {@link TemplateDateModel} can't be formatted because of the value/properties of the
- * {@link TemplateDateModel}.  The most often used subclass is {@link UnknownDateTypeFormattingUnsupportedException}. 
+ * {@link TemplateDateModel}.  The most often used subclass is {@link UnknownDateTypeFormattingUnsupportedException}.
+ * 
+ * @since 2.3.24
  */
-// [Advanced formatting: planned public]
-abstract class UnformattableDateException extends Exception {
+public abstract class UnformattableDateException extends Exception {
 
     public UnformattableDateException(String message, Throwable cause) {
         super(message, cause);

@@ -55,13 +55,13 @@ class ExistenceBuiltins {
     
     static class defaultBI extends ExistenceBuiltins.ExistenceBuiltIn {
         
+        @Override
         TemplateModel _eval(final Environment env) throws TemplateException {
             TemplateModel model = evalMaybeNonexistentTarget(env);
             return model == null ? FIRST_NON_NULL_METHOD : new ConstantMethod(model);
         }
 
-        private static class ConstantMethod implements TemplateMethodModelEx
-        {
+        private static class ConstantMethod implements TemplateMethodModelEx {
             private final TemplateModel constant;
 
             ConstantMethod(TemplateModel constant) {
@@ -81,7 +81,7 @@ class ExistenceBuiltins {
             new TemplateMethodModelEx() {
                 public Object exec(List args) throws TemplateModelException {
                     int argCnt = args.size();
-                    if(argCnt == 0) throw MessageUtil.newArgCntError("?default", argCnt, 1, Integer.MAX_VALUE);
+                    if (argCnt == 0) throw MessageUtil.newArgCntError("?default", argCnt, 1, Integer.MAX_VALUE);
                     for (int i = 0; i < argCnt; i++ ) {
                         TemplateModel result = (TemplateModel) args.get(i);
                         if (result != null) return result;
@@ -92,31 +92,35 @@ class ExistenceBuiltins {
     }
     
     static class existsBI extends ExistenceBuiltins.ExistenceBuiltIn {
+        @Override
         TemplateModel _eval(Environment env) throws TemplateException {
             return evalMaybeNonexistentTarget(env) == null ? TemplateBooleanModel.FALSE : TemplateBooleanModel.TRUE;
         }
     
+        @Override
         boolean evalToBoolean(Environment env) throws TemplateException {
             return _eval(env) == TemplateBooleanModel.TRUE;
         }
     }
 
     static class has_contentBI extends ExistenceBuiltins.ExistenceBuiltIn {
+        @Override
         TemplateModel _eval(Environment env) throws TemplateException {
             return Expression.isEmpty(evalMaybeNonexistentTarget(env))
                     ? TemplateBooleanModel.FALSE
                     : TemplateBooleanModel.TRUE;
         }
     
+        @Override
         boolean evalToBoolean(Environment env) throws TemplateException {
             return _eval(env) == TemplateBooleanModel.TRUE;
         }
     }
 
     static class if_existsBI extends ExistenceBuiltins.ExistenceBuiltIn {
+        @Override
         TemplateModel _eval(Environment env)
-                throws TemplateException
-        {
+                throws TemplateException {
             TemplateModel model = evalMaybeNonexistentTarget(env);
             return model == null ? TemplateModel.NOTHING : model;
         }

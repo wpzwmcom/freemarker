@@ -31,9 +31,10 @@ public class _EnumModels extends ClassBasedModelFactory {
         super(wrapper);
     }
     
+    @Override
     protected TemplateModel createModel(Class clazz) {
         Object[] obj = clazz.getEnumConstants();
-        if(obj == null) {
+        if (obj == null) {
             // Return null - it'll manifest itself as undefined in the template.
             // We're doing this rather than throw an exception as this way 
             // people can use someEnumModel?default({}) to gracefully fall back 

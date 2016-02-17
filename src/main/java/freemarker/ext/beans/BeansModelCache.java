@@ -19,17 +19,15 @@ package freemarker.ext.beans;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
-import freemarker.core._ConcurrentMapFactory;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import freemarker.ext.util.ModelCache;
 import freemarker.ext.util.ModelFactory;
 import freemarker.template.TemplateModel;
 
-public class BeansModelCache extends ModelCache
-{
-    private final Map classToFactory = _ConcurrentMapFactory.newMaybeConcurrentHashMap();
-    private final boolean classToFactoryIsConcurrent
-            = _ConcurrentMapFactory.isConcurrent(classToFactory);
+public class BeansModelCache extends ModelCache {
+    private final Map classToFactory = new ConcurrentHashMap();
     private final Set mappedClassNames = new HashSet();
 
     private final BeansWrapper wrapper;
@@ -38,26 +36,26 @@ public class BeansModelCache extends ModelCache
         this.wrapper = wrapper;
     }
     
+    @Override
     protected boolean isCacheable(Object object) {
         return object.getClass() != Boolean.class; 
     }
     
+    @Override
+    @SuppressFBWarnings(value="JLM_JSR166_UTILCONCURRENT_MONITORENTER", justification="Locks for factory creation only")
     protected TemplateModel create(Object object) {
         Class clazz = object.getClass();
         
-        ModelFactory factory = null;
-
-        if (classToFactoryIsConcurrent) {
-            factory = (ModelFactory) classToFactory.get(clazz);
-        }
+        ModelFactory factory = (ModelFactory) classToFactory.get(clazz);
         
         if (factory == null) {
-            synchronized(classToFactory) {
-                factory = (ModelFactory)classToFactory.get(clazz);
-                if(factory == null) {
+            // Synchronized so that we won't unnecessarily create the same factory for multiple times in parallel.
+            synchronized (classToFactory) {
+                factory = (ModelFactory) classToFactory.get(clazz);
+                if (factory == null) {
                     String className = clazz.getName();
                     // clear mappings when class reloading is detected
-                    if(!mappedClassNames.add(className)) {
+                    if (!mappedClassNames.add(className)) {
                         classToFactory.clear();
                         mappedClassNames.clear();
                         mappedClassNames.add(className);

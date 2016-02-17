@@ -22,86 +22,82 @@ import org.apache.log.Hierarchy;
  * Don't use this class; it's only public to work around Google App Engine Java
  * compliance issues. FreeMarker developers only: treat this class as package-visible.
  */
-public class _AvalonLoggerFactory implements LoggerFactory
-{
-    public Logger getLogger(String category)
-    {
+public class _AvalonLoggerFactory implements LoggerFactory {
+    public Logger getLogger(String category) {
         return new AvalonLogger(Hierarchy.getDefaultHierarchy().getLoggerFor(category));
     }
 
     private static class AvalonLogger
     extends
-        Logger
-    {
+        Logger {
         private final org.apache.log.Logger logger;
         
-        AvalonLogger(org.apache.log.Logger logger)
-        {
+        AvalonLogger(org.apache.log.Logger logger) {
             this.logger = logger;
         }
         
-        public void debug(String message)
-        {
+        @Override
+        public void debug(String message) {
             logger.debug(message);
         }
 
-        public void debug(String message, Throwable t)
-        {
+        @Override
+        public void debug(String message, Throwable t) {
             logger.debug(message, t);
         }
 
-        public void error(String message)
-        {
+        @Override
+        public void error(String message) {
             logger.error(message);
         }
 
-        public void error(String message, Throwable t)
-        {
+        @Override
+        public void error(String message, Throwable t) {
             logger.error(message, t);
         }
 
-        public void info(String message)
-        {
+        @Override
+        public void info(String message) {
             logger.info(message);
         }
 
-        public void info(String message, Throwable t)
-        {
+        @Override
+        public void info(String message, Throwable t) {
             logger.info(message, t);
         }
 
-        public void warn(String message)
-        {
+        @Override
+        public void warn(String message) {
             logger.warn(message);
         }
 
-        public void warn(String message, Throwable t)
-        {
+        @Override
+        public void warn(String message, Throwable t) {
             logger.warn(message, t);
         }
 
-        public boolean isDebugEnabled()
-        {
+        @Override
+        public boolean isDebugEnabled() {
             return logger.isDebugEnabled();
         }
 
-        public boolean isInfoEnabled()
-        {
+        @Override
+        public boolean isInfoEnabled() {
             return logger.isInfoEnabled();
         }
 
-        public boolean isWarnEnabled()
-        {
+        @Override
+        public boolean isWarnEnabled() {
             return logger.isWarnEnabled();
         }
 
-        public boolean isErrorEnabled()
-        {
+        @Override
+        public boolean isErrorEnabled() {
             return logger.isErrorEnabled();
         }
 
-        public boolean isFatalEnabled()
-        {
+        @Override
+        public boolean isFatalEnabled() {
             return logger.isFatalErrorEnabled();
         }
     }

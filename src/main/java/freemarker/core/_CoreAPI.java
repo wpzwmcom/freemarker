@@ -16,10 +16,15 @@
 
 package freemarker.core;
 
-import java.io.PrintWriter;
+import java.io.Writer;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
 import java.util.TreeSet;
+
+import freemarker.template.Template;
+import freemarker.template.TemplateDirectiveBody;
+import freemarker.template.utility.ClassUtil;
 
 
 /**
@@ -29,16 +34,18 @@ import java.util.TreeSet;
  */ 
 public class _CoreAPI {
     
+    public static final String ERROR_MESSAGE_HR = "----";
+
     // Can't be instantiated
     private _CoreAPI() { }
-
-    public static final String STACK_SECTION_SEPARATOR = Environment.STACK_SECTION_SEPARATOR;
     
     public static final Set/*<String>*/ BUILT_IN_DIRECTIVE_NAMES;
     static {
         Set/*<String>*/ names = new TreeSet();
         names.add("assign");
         names.add("attempt");
+        names.add("autoEsc");
+        names.add("autoesc");
         names.add("break");
         names.add("call");
         names.add("case");
@@ -47,28 +54,38 @@ public class _CoreAPI {
         names.add("default");
         names.add("else");
         names.add("elseif");
+        names.add("elseIf");
         names.add("escape");
         names.add("fallback");
         names.add("flush");
         names.add("foreach");
+        names.add("forEach");
         names.add("ftl");
         names.add("function");
         names.add("global");
         names.add("if");
         names.add("import");
         names.add("include");
+        names.add("items");
         names.add("list");
         names.add("local");
         names.add("lt");
         names.add("macro");
         names.add("nested");
+        names.add("noautoesc");
+        names.add("noAutoEsc");
         names.add("noescape");
+        names.add("noEscape");
         names.add("noparse");
+        names.add("noParse");
         names.add("nt");
+        names.add("outputformat");
+        names.add("outputFormat");
         names.add("recover");
         names.add("recurse");
         names.add("return");
         names.add("rt");
+        names.add("sep");
         names.add("setting");
         names.add("stop");
         names.add("switch");
@@ -86,8 +103,8 @@ public class _CoreAPI {
         return Collections.unmodifiableSet(BuiltIn.builtins.keySet());
     }
     
-    public static String instructionStackItemToString(TemplateElement stackEl) {
-        return Environment.instructionStackItemToString(stackEl);
+    public static void appendInstructionStackItem(TemplateElement stackEl, StringBuilder sb) {
+        Environment.appendInstructionStackItem(stackEl, sb);
     }
     
     public static TemplateElement[] getInstructionStackSnapshot(Environment env) {
@@ -95,8 +112,45 @@ public class _CoreAPI {
     }
     
     public static void outputInstructionStack(
-            TemplateElement[] instructionStackSnapshot, PrintWriter pw) {
-        Environment.outputInstructionStack(instructionStackSnapshot, pw);
+            TemplateElement[] instructionStackSnapshot, boolean terseMode, Writer pw) {
+        Environment.outputInstructionStack(instructionStackSnapshot, terseMode, pw);
+    }
+
+    /**
+     * ATTENTION: This is used by https://github.com/kenshoo/freemarker-online. Don't break backward
+     * compatibility without updating that project too! 
+     */
+    static final public void addThreadInterruptedChecks(Template template) {
+        try {
+            new ThreadInterruptionSupportTemplatePostProcessor().postProcess(template);
+        } catch (TemplatePostProcessorException e) {
+            throw new RuntimeException("Template post-processing failed", e);
+        }
+    }
+    
+    static final public void checkHasNoNestedContent(TemplateDirectiveBody body)
+            throws NestedContentNotSupportedException {
+        NestedContentNotSupportedException.check(body);
+    }
+    
+    static final public void replaceText(TextBlock textBlock, String text) {
+        textBlock.replaceText(text);
+    }
+
+    /**
+     * @throws IllegalArgumentException
+     *             if the type of the some of the values isn't as expected
+     */
+    public static void checkSettingValueItemsType(String somethingsSentenceStart, Class<?> expectedClass,
+            Collection<? extends Object> values) {
+        if (values == null) return;
+        for (Object value : values) {
+            if (!expectedClass.isInstance(value)) {
+                throw new IllegalArgumentException(somethingsSentenceStart + " must be instances of "
+                        + ClassUtil.getShortClassName(expectedClass) + ", but one of them was a(n) "
+                        + ClassUtil.getShortClassNameOfObject(value) + ".");
+            }
+        }
     }
     
 }

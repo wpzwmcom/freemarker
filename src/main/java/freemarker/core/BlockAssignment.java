@@ -24,6 +24,7 @@ import java.util.Map;
 import freemarker.template.SimpleScalar;
 import freemarker.template.TemplateException;
 import freemarker.template.TemplateModel;
+import freemarker.template.TemplateModelException;
 import freemarker.template.TemplateTransformModel;
 
 /**
@@ -34,30 +35,37 @@ final class BlockAssignment extends TemplateElement {
     private final String varName;
     private final Expression namespaceExp;
     private final int scope;
+    private final MarkupOutputFormat<?> markupOutputFormat;
 
-    BlockAssignment(TemplateElement nestedBlock, String varName, int scope, Expression namespaceExp) {
-        this.nestedBlock = nestedBlock;
+    BlockAssignment(TemplateElement nestedBlock, String varName, int scope, Expression namespaceExp, MarkupOutputFormat<?> markupOutputFormat) {
+        setNestedBlock(nestedBlock);
         this.varName = varName;
         this.namespaceExp = namespaceExp;
         this.scope = scope;
+        this.markupOutputFormat = markupOutputFormat;
     }
 
+    @Override
     void accept(Environment env) throws TemplateException, IOException {
-        if (nestedBlock != null) {
-            env.visitAndTransform(nestedBlock, new CaptureOutput(env), null);
+        if (getNestedBlock() != null) {
+            env.visitAndTransform(getNestedBlock(), new CaptureOutput(env), null);
         } else {
-			TemplateModel value = new SimpleScalar("");
-			if (namespaceExp != null) {
-				Environment.Namespace ns = (Environment.Namespace) namespaceExp.eval(env);
-				ns.put(varName, value);
- 			} else if (scope == Assignment.NAMESPACE) {
-				env.setVariable(varName, value);
-			} else if (scope == Assignment.GLOBAL) {
-				env.setGlobalVariable(varName, value);
-			} else if (scope == Assignment.LOCAL) {
-				env.setLocalVariable(varName, value);
-			}
-		}
+            TemplateModel value = capturedStringToModel("");
+            if (namespaceExp != null) {
+                Environment.Namespace ns = (Environment.Namespace) namespaceExp.eval(env);
+                ns.put(varName, value);
+            } else if (scope == Assignment.NAMESPACE) {
+                env.setVariable(varName, value);
+            } else if (scope == Assignment.GLOBAL) {
+                env.setGlobalVariable(varName, value);
+            } else if (scope == Assignment.LOCAL) {
+                env.setLocalVariable(varName, value);
+            }
+        }
+    }
+
+    private TemplateModel capturedStringToModel(String s) throws TemplateModelException {
+        return markupOutputFormat == null ? new SimpleScalar(s) : markupOutputFormat.fromMarkup(s);
     }
 
     private class CaptureOutput implements TemplateTransformModel {
@@ -67,25 +75,31 @@ final class BlockAssignment extends TemplateElement {
         CaptureOutput(Environment env) throws TemplateException {
             this.env = env;
             TemplateModel nsModel = null;
-            if(namespaceExp != null) {
+            if (namespaceExp != null) {
                 nsModel = namespaceExp.eval(env);
                 if (!(nsModel instanceof Environment.Namespace)) {
                     throw new NonNamespaceException(namespaceExp, nsModel, env);
                 }
             }
-            fnsModel = (Environment.Namespace )nsModel; 
+            fnsModel = (Environment.Namespace ) nsModel; 
         }
         
         public Writer getWriter(Writer out, Map args) {
             return new StringWriter() {
-                public void close() {
-                    SimpleScalar result = new SimpleScalar(toString());
+                @Override
+                public void close() throws IOException {
+                    TemplateModel result;
+                    try {
+                        result = capturedStringToModel(toString());
+                    } catch (TemplateModelException e) {
+                        // [Java 1.6] e to cause
+                        throw new IOException("Failed to create FTL value from captured string: " + e);
+                    }
                     switch(scope) {
                         case Assignment.NAMESPACE: {
-                            if(fnsModel != null) {
+                            if (fnsModel != null) {
                                 fnsModel.put(varName, result);
-                            }
-                            else {
+                            } else {
                                 env.setVariable(varName, result);
                             }
                             break;
@@ -104,8 +118,9 @@ final class BlockAssignment extends TemplateElement {
         }
     }
     
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         if (canonical) sb.append("<");
         sb.append(getNodeTypeSymbol());
         sb.append(' ');
@@ -116,7 +131,7 @@ final class BlockAssignment extends TemplateElement {
         }
         if (canonical) {
             sb.append('>');
-            sb.append(nestedBlock == null ? "" : nestedBlock.getCanonicalForm());
+            sb.append(getNestedBlock() == null ? "" : getNestedBlock().getCanonicalForm());
             sb.append("</");
             sb.append(getNodeTypeSymbol());
             sb.append('>');
@@ -126,23 +141,27 @@ final class BlockAssignment extends TemplateElement {
         return sb.toString();
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return Assignment.getDirectiveName(scope);
     }
     
+    @Override
     int getParameterCount() {
         return 3;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         switch (idx) {
         case 0: return varName;
-        case 1: return new Integer(scope);
+        case 1: return Integer.valueOf(scope);
         case 2: return namespaceExp;
         default: throw new IndexOutOfBoundsException();
         }
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         switch (idx) {
         case 0: return ParameterRole.ASSIGNMENT_TARGET;
@@ -152,7 +171,8 @@ final class BlockAssignment extends TemplateElement {
         }
     }
 
-    boolean isIgnorable() {
+    @Override
+    boolean isNestedBlockRepeater() {
         return false;
     }
 }

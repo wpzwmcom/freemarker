@@ -33,36 +33,29 @@ public class RmiDebuggerListenerImpl
 extends
     UnicastRemoteObject
 implements
-    DebuggerListener, Unreferenced
-{
-    private static final Logger logger = Logger.getLogger(
+    DebuggerListener, Unreferenced {
+    private static final Logger LOG = Logger.getLogger(
             "freemarker.debug.client");
     
     private static final long serialVersionUID = 1L;
 
     private final DebuggerListener listener;
 
-    public void unreferenced()
-    {
-        try
-        {
+    public void unreferenced() {
+        try {
             UnicastRemoteObject.unexportObject(this, false);
-        }
-        catch (NoSuchObjectException e)
-        {
-            logger.warn("Failed to unexport RMI debugger listener", e);
+        } catch (NoSuchObjectException e) {
+            LOG.warn("Failed to unexport RMI debugger listener", e);
         }
     }
     
     public RmiDebuggerListenerImpl(DebuggerListener listener) 
-    throws RemoteException
-    {
+    throws RemoteException {
         this.listener = listener;
     }
 
     public void environmentSuspended(EnvironmentSuspendedEvent e) 
-    throws RemoteException
-    {
+    throws RemoteException {
         listener.environmentSuspended(e);
     }
 }

@@ -4,7 +4,6 @@
   xmlns:ivy="antlib:org.apache.ivy.ant"
   xmlns:javacc="http://javacc.dev.java.net/"
   xmlns:docgen="http://freemarker.org/docgen"
-  xmlns:emma="http://emma.sourceforge.net/emma"
   xmlns:bnd="http://www.aqute.biz/bnd"
   xmlns:u="http://freemarker.org/util"
 >
@@ -22,29 +21,21 @@
   <property name="server.ivy.repo.root" value="${basedir}/build/dummy-server-ivy-repo" />
   
   <property file="build.properties"/>
-  <condition property="has.explicit.boot.classpath.j2se1.4">
-    <isset property="boot.classpath.j2se1.4"/>
-  </condition>
   <condition property="has.explicit.boot.classpath.j2se1.5">
     <isset property="boot.classpath.j2se1.5"/>
   </condition>
   <condition property="has.all.explicit.boot.classpaths">
     <and>
-      <isset property="has.explicit.boot.classpath.j2se1.4"/>
       <isset property="has.explicit.boot.classpath.j2se1.5"/>
     </and>
   </condition>
+  <available property="atLeastJDK8" classname="java.util.function.Predicate"/>
 
   <!-- When boot.classpath.j2se* is missing, these will be the defaults: -->
   <!-- Note: Target "dist" doesn't allow using these. -->
-  <property name="boot.classpath.j2se1.4" value="${sun.boot.class.path}" />
   <property name="boot.classpath.j2se1.5" value="${sun.boot.class.path}" />
   
   <!-- For checking the correctness of the boot.classpath.j2se* -->
-  <available classpath="${boot.classpath.j2se1.4}"
-    classname="java.lang.Object" ignoresystemclasses="true" 
-    property="boot.classpath.j2se1.4.correct"
-  />
   <available classpath="${boot.classpath.j2se1.5}"
     classname="java.lang.Object" ignoresystemclasses="true" 
     property="boot.classpath.j2se1.5.correct"
@@ -71,7 +62,7 @@
   </tstamp>
   <filter token="timestampInVersion" value="${timestampInVersion}" />
   <filter token="timestampNice" value="${timestampNice}" />
-  <mkdir dir="build "/>
+  <mkdir dir="build"/>
   <!-- Copying is needed to substitute the timestamps. -->
   <copy
       file="src/main/resources/freemarker/version.properties"
@@ -106,7 +97,7 @@
   </condition>
   
   <target name="init" depends="_autoget-deps"
-    description="fetch dependencies if any are missing and create the build directory if necessary"
+    description="Fetch dependencies if any are missing and create the build directory if necessary"
   >
     <mkdir dir="build"/>
   </target>
@@ -157,7 +148,7 @@
     <replace
       file="${_javaccOutputDir}/Token.java"
       token="public class Token"
-      value="class Token implements java.io.Serializable"
+      value="class Token"
     />
     <replace
       file="${_javaccOutputDir}/SimpleCharStream.java"
@@ -182,39 +173,27 @@
   </target>
    
   <target name="compile" depends="javacc">
-    <fail unless="boot.classpath.j2se1.4.correct"><!--
-      -->The "boot.classpath.j2se1.4" property value (${boot.classpath.j2se1.4}) <!--
-      -->seems to be an incorrect boot classpath. Please fix it in <!--
-      -->the &lt;projectDir>/build.properties file, or wherever you <!--
-      -->set it.<!--
-    --></fail>
     <fail unless="boot.classpath.j2se1.5.correct"><!--
       -->The "boot.classpath.j2se1.5" property value (${boot.classpath.j2se1.5}) <!--
       -->seems to be an incorrect boot classpath. Please fix it in <!--
       -->the &lt;projectDir>/build.properties file, or wherever you <!--
       -->set it.<!--
     --></fail>
-    <echo level="info">Using boot classpaths: 1.4: ${boot.classpath.j2se1.4}; 1.5: ${boot.classpath.j2se1.5}</echo>
+    <echo level="info">Using boot classpaths: 1.5: ${boot.classpath.j2se1.5}</echo>
 
     <mkdir dir="build/classes" />
     
-    <!-- Note: the "build" conf includes the JSP 2.0 and Servlet 2.4 API-s. -->
-    <!-- But it doesn't include other API-s that has multiple versions to compile against. -->
-    <ivy:cachepath conf="build" pathid="ivy.dep" />
+    <!-- Note: the "build.base" conf doesn't include optional FreeMarker dependencies. -->
+    <ivy:cachepath conf="build.base" pathid="ivy.dep" />
     <javac destdir="build/classes" deprecation="off" 
-      debug="on" optimize="off" target="1.4" source="1.4" encoding="utf-8"
+      debug="on" optimize="off" target="1.5" source="1.5" encoding="utf-8"
       includeantruntime="false"
       classpathref="ivy.dep"
-      bootclasspath="${boot.classpath.j2se1.4}"
+      bootclasspath="${boot.classpath.j2se1.5}"
       excludes="
-        freemarker/ext/beans/_EnumModels.java,
-        freemarker/ext/dom/SunInternalXalanXPathSupport.java,
-        
-        freemarker/ext/jsp/TaglibFactory.java,
-        freemarker/ext/jsp/_FreeMarkerPageContext1.java,
-        freemarker/ext/jsp/_FreeMarkerPageContext21.java,
-        freemarker/ext/jsp/FreeMarkerJspFactory21.java,
-        freemarker/ext/jsp/FreeMarkerJspApplicationContext.java,
+        freemarker/ext/jsp/**,
+        freemarker/ext/servlet/**,
+        freemarker/cache/WebappTemplateLoader.java,
         
         freemarker/ext/jython/**,
         freemarker/template/utility/JythonRuntime.java,
@@ -232,23 +211,30 @@
       verify="yes" stubversion="1.2"
     />
 
-    <ivy:cachepath conf="build.j2se1.5" pathid="ivy.dep.j2se1.5" />
+    <ivy:cachepath conf="build.jsp2.0" pathid="ivy.dep.jsp1.2" />
     <javac srcdir="src/main/java" destdir="build/classes" deprecation="off" 
       debug="on" optimize="off" target="1.5" source="1.5" encoding="utf-8"
       includeantruntime="false"
-      classpathref="ivy.dep.j2se1.5"
+      classpathref="ivy.dep.jsp1.2"
       bootclasspath="${boot.classpath.j2se1.5}"
       includes="
-        freemarker/ext/beans/_EnumModels.java,
-        freemarker/ext/dom/SunInternalXalanXPathSupport.java"
+        freemarker/ext/jsp/**,
+        freemarker/ext/servlet/**,
+        freemarker/cache/WebappTemplateLoader.java"
+      excludes="
+        freemarker/ext/jsp/TaglibFactory.java,
+        freemarker/ext/jsp/_FreeMarkerPageContext1.java,
+        freemarker/ext/jsp/_FreeMarkerPageContext21.java,
+        freemarker/ext/jsp/FreeMarkerJspFactory21.java,
+        freemarker/ext/jsp/FreeMarkerJspApplicationContext.java"
     />
     
     <ivy:cachepath conf="build.jsp1.2" pathid="ivy.dep.jsp1.2" />
     <javac srcdir="src/main/java" destdir="build/classes" deprecation="off" 
-      debug="on" optimize="off" target="1.4" source="1.4" encoding="utf-8"
+      debug="on" optimize="off" target="1.5" source="1.5" encoding="utf-8"
       includeantruntime="false"
       classpathref="ivy.dep.jsp1.2"
-      bootclasspath="${boot.classpath.j2se1.4}"
+      bootclasspath="${boot.classpath.j2se1.5}"
       includes="
         freemarker/ext/jsp/TaglibFactory.java,
         freemarker/ext/jsp/_FreeMarkerPageContext1.java"
@@ -258,10 +244,10 @@
     
     <ivy:cachepath conf="build.jsp2.1" pathid="ivy.dep.jsp2.1" />
     <javac srcdir="src/main/java" destdir="build/classes" deprecation="off" 
-      debug="on" optimize="off" target="1.4" source="1.4" encoding="utf-8"
+      debug="on" optimize="off" target="1.5" source="1.5" encoding="utf-8"
       includeantruntime="false"
       classpathref="ivy.dep.jsp2.1"
-      bootclasspath="${boot.classpath.j2se1.4}"
+      bootclasspath="${boot.classpath.j2se1.5}"
       includes="
         freemarker/ext/jsp/_FreeMarkerPageContext21.java,
         freemarker/ext/jsp/FreeMarkerJspFactory21.java,
@@ -270,10 +256,10 @@
 
     <ivy:cachepath conf="build.jython2.0" pathid="ivy.dep.jython2.0" />
     <javac srcdir="src/main/java" destdir="build/classes" deprecation="off" 
-      debug="on" optimize="off" target="1.4" source="1.4" encoding="utf-8"
+      debug="on" optimize="off" target="1.5" source="1.5" encoding="utf-8"
       includeantruntime="false"
       classpathref="ivy.dep.jython2.0"
-      bootclasspath="${boot.classpath.j2se1.4}"
+      bootclasspath="${boot.classpath.j2se1.5}"
       includes="
         freemarker/ext/ant/**,
         freemarker/template/utility/JythonRuntime.java,
@@ -285,17 +271,17 @@
     
     <ivy:cachepath conf="build.jython2.2" pathid="ivy.dep.jython2.2" />
     <javac srcdir="src/main/java" destdir="build/classes" deprecation="off" 
-      debug="on" optimize="off" target="1.4" source="1.4" encoding="utf-8"
+      debug="on" optimize="off" target="1.5" source="1.5" encoding="utf-8"
       includeantruntime="false"
       classpathref="ivy.dep.jython2.2"
-      bootclasspath="${boot.classpath.j2se1.4}"
+      bootclasspath="${boot.classpath.j2se1.5}"
       includes="
         freemarker/ext/jython/_Jython22VersionAdapter.java"
     />
     
     <ivy:cachepath conf="build.jython2.5" pathid="ivy.dep.jython2.5" />
     <javac srcdir="src/main/java" destdir="build/classes" deprecation="off" 
-      debug="on" optimize="off" target="1.4" source="1.4" encoding="utf-8"
+      debug="on" optimize="off" target="1.5" source="1.5" encoding="utf-8"
       includeantruntime="false"
       classpathref="ivy.dep.jython2.5"
       bootclasspath="${boot.classpath.j2se1.5}"
@@ -339,12 +325,12 @@
   <target name="compileTest" depends="compile">
     <mkdir dir="build/test-classes" />
   
-    <ivy:cachepath conf="build.test" pathid="ivy.dep.test" />
+    <ivy:cachepath conf="build.test" pathid="ivy.dep.build.test" />
     <javac srcdir="src/test/java" destdir="build/test-classes" deprecation="off" 
       debug="on" optimize="off" target="1.5" source="1.5" encoding="utf-8"
       includeantruntime="false"
       classpath="build/classes"
-      classpathref="ivy.dep.test"
+      classpathref="ivy.dep.build.test"
       bootclasspath="${boot.classpath.j2se1.5}"
     />
     <copy toDir="build/test-classes">
@@ -388,37 +374,13 @@
   <!-- ================================================================= -->
 
   <target name="test" depends="compileTest" description="Run test cases">
-    <ivy:cachepath conf="emma" pathid="ivy.dep.emma" />
-    <taskdef
-      resource="emma_ant.properties" classpathref="ivy.dep.emma"
-      uri="http://emma.sourceforge.net/emma" 
-    />
-    
-    <property name="coverage.dir" location="build/coverage" />
-    <property name="coverage.classes.dir" location="build/coverage/classes" />
-    <mkdir dir="${coverage.classes.dir}" />
-    <property name="coverage.instrumentationfile" location="${coverage.dir}/instrumentation" />
-    <emma:emma enabled="true">
-      <instr 
-        instrpath="build/classes" outdir="${coverage.classes.dir}" 
-        outfile="${coverage.instrumentationfile}" mode="copy">
-        <filter excludes="*_Stub" />
-      </instr>
-    </emma:emma>
-    <copy todir="${coverage.classes.dir}" overwrite="false">
-      <fileset dir="build/classes" />
-      <fileset dir="build/test-classes" />
-    </copy>
-    <property name="coverage.outfile" location="${coverage.dir}/coverage" />
-   
     <mkdir dir="build/junit-reports" />
-    <ivy:cachepath conf="test" pathid="ivy.dep.test" />
+    <ivy:cachepath conf="run.test" pathid="ivy.dep.run.test" />
     <junit haltonfailure="on" fork="true" forkmode="once">
-      <sysproperty key="emma.coverage.out.file" value="${coverage.outfile}" />
       <classpath>
-        <pathelement path="${coverage.classes.dir}" />
-        <path refid="ivy.dep.emma" />
-        <path refid="ivy.dep.test" />
+        <pathelement path="build/test-classes" />
+        <pathelement path="build/classes" />
+        <path refid="ivy.dep.run.test" />
       </classpath>
       <formatter type="plain" />
       <formatter type="xml" />
@@ -430,35 +392,13 @@
         </fileset>
       </batchtest>
     </junit>
-    
-    <property name="coverage.report.dir" location="build/coverage/report" />
-    <mkdir dir="${coverage.report.dir}" />
-    <delete dir="${coverage.report.dir}" />
-    <mkdir dir="${coverage.report.dir}" />
-    <echo message="${coverage.outfile}" />
-    <echo message="${coverage.instrumentationfile}" />
-    <emma:emma enabled="true">
-      <report>
-        <fileset dir="${basedir}">
-          <include name="build/coverage/instrumentation" />
-          <include name="build/coverage/coverage" />
-        </fileset>
-        <sourcepath>
-          <dirset dir="${basedir}">
-            <include name="src/main/java" />
-          </dirset>
-        </sourcepath>
-        <html outfile="${coverage.report.dir}/index.html" />
-        <xml outfile="${coverage.report.dir}/report.xml" />
-      </report>
-    </emma:emma>
   </target>
   
   <!-- ================================================================= -->
   <!-- Generate docs                                                     -->
   <!-- ================================================================= -->
 
-  <target depends="javacc" name="javadoc" description="Build the JavaDocs" >
+  <target depends="javacc" name="_rawJavadoc">
     <!-- depends="javacc" is needed as its output is referred in the docs. -->
     <mkdir dir="build/api" />
     <delete includeEmptyDirs="yes">
@@ -489,6 +429,7 @@
         <exclude name="**/log/CommonsLoggingLoggerFactory.java" />
       </fileset>
     </copy>
+    
     <!-- conf="IDE": as that has to contain all depedencies -->
     <ivy:cachepath conf="IDE" pathid="ivy.dep" />
     <javadoc
@@ -505,28 +446,112 @@
       windowtitle="FreeMarker ${version} API"
       classpath="build/classes"
       classpathref="ivy.dep"
-    />
+      failonerror="true"
+      charset="UTF-8"
+      docencoding="UTF-8"
+      locale="en_US"
+    >
+      <link href="http://docs.oracle.com/javase/8/docs/api/"/>
+    </javadoc>
     <delete dir="build/javadoc-sources" />
-    
-    <available file="build/api/resources/titlebar.gif" property="titlebar.found"/>
-    <fail unless="titlebar.found"><!--
-    -->build/api/resources/titlebar.gif doesn't exist, which probably means <!--
-    -->that the API documentaton was generated with JDK 6 or earlier. Ensure <!--
-    -->that Ant uses JDK 7 or later (you may need to set JAVA_HOME), as the <!--
-    -->HTML output was significantly improved with JDK 7.<!--
-    --></fail>
   </target>
 
-  <target name="manual" depends="init" description="Build the Manual" >
-    <ivy:cachepath conf="manual" pathid="ivy.dep" />
-    <taskdef resource="org/freemarker/docgen/antlib.properties"
-      uri="http://freemarker.org/docgen"
-      classpathref="ivy.dep"
+  <target name="javadoc" depends="_rawJavadoc, _fixJDK8JavadocCSS" description="Build the JavaDocs" />
+  
+  <target name="_fixJDK8JavadocCSS" depends="_rawJavadoc" if="atLeastJDK8">
+    <property name="file" value="build/api/stylesheet.css" />
+        
+    <available file="${file}" property="stylesheet.available"/>
+    <fail unless="stylesheet.available">CSS file not found: ${file}</fail>
+    <echo>Fixing JDK 8 CSS in ${file}</echo>
+    
+    <!-- Tell that it's modified: -->
+    <replaceregexp
+        file="${file}" flags="gs" encoding="utf-8"
+        match="/\* (Javadoc style sheet) \*/" replace="/\* \1 - JDK 8 usability fix regexp substitutions applied \*/"
+    />
+
+    <!-- Remove broken link: -->
+    <replaceregexp
+        file="${file}" flags="gs" encoding="utf-8"
+        match="@import url\('resources/fonts/dejavu.css'\);\s*" replace=""
     />
     
-    <docgen:transform
-      srcdir="src/manual" destdir="build/manual"
+    <!-- Font family fixes: -->
+    <replaceregexp
+        file="${file}" flags="gsi" encoding="utf-8"
+        match="['&quot;]DejaVu Sans['&quot;]" replace="Arial"
     />
+    <replaceregexp
+        file="${file}" flags="gsi" encoding="utf-8"
+        match="['&quot;]DejaVu Sans Mono['&quot;]" replace="'Courier New'"
+    />
+    <replaceregexp
+        file="${file}" flags="gsi" encoding="utf-8"
+        match="['&quot;]DejaVu Serif['&quot;]" replace="Arial"
+    />
+    <replaceregexp
+        file="${file}" flags="gsi" encoding="utf-8"
+        match="(?&lt;=[\s,:])serif\b" replace="sans-serif"
+    />
+    <replaceregexp
+        file="${file}" flags="gsi" encoding="utf-8"
+        match="(?&lt;=[\s,:])Georgia,\s*" replace=""
+    />
+    <replaceregexp
+        file="${file}" flags="gsi" encoding="utf-8"
+        match="['&quot;]Times New Roman['&quot;],\s*" replace=""
+    />
+    <replaceregexp
+        file="${file}" flags="gsi" encoding="utf-8"
+        match="(?&lt;=[\s,:])Times,\s*" replace=""
+    />
+    <replaceregexp
+        file="${file}" flags="gsi" encoding="utf-8"
+        match="(?&lt;=[\s,:])Arial\s*,\s*Arial\b" replace="Arial"
+    />
+    
+    <!-- "Parameters:", "Returns:", "Throws:", "Since:", "See also:" etc. fixes: -->
+    <property name="ddSelectorStart" value="(?:\.contentContainer\s+\.(?:details|description)|\.serializedFormContainer)\s+dl\s+dd\b.*?\{[^\}]*\b" />
+    <property name="ddPropertyEnd" value="\b.+?;" />
+    <!-- - Put back description (dd) indentation: -->
+    <replaceregexp
+        file="${file}" flags="gs" encoding="utf-8"
+        match="(${ddSelectorStart})margin${ddPropertyEnd}" replace="\1margin: 5px 0 10px 20px;"
+    />
+    <!-- - No monospace font for the description (dd) part: -->
+    <replaceregexp
+        file="${file}" flags="gs" encoding="utf-8"
+        match="(${ddSelectorStart})font-family${ddPropertyEnd}" replace="\1"
+    />
+  </target>
+  
+  <!-- ====================== -->
+  <!-- Manual                 -->
+  <!-- ====================== -->
+  
+  <macrodef name="manual" uri="http://freemarker.org/util">
+    <attribute name="offline" />
+    <sequential>
+      <ivy:cachepath conf="manual" pathid="ivy.dep" />
+      <taskdef resource="org/freemarker/docgen/antlib.properties"
+        uri="http://freemarker.org/docgen"
+        classpathref="ivy.dep"
+      />
+      
+      <docgen:transform
+        srcdir="src/manual" destdir="build/manual"
+        offline="@{offline}"
+      />
+    </sequential>
+  </macrodef>
+  
+  <target name="manualOffline" depends="init" description="Build the Manual for offline use" >
+    <u:manual offline="true" />
+  </target>
+
+  <target name="manualFreemarkerOrg" depends="init" description="Build the Manual to be upload to freemarker.org" >
+    <u:manual offline="false" />
   </target>
 
   <!-- ====================== -->
@@ -541,11 +566,11 @@
       <javac
         srcdir="src/examples/@{exampleName}/WEB-INF/classes"
         destdir="build/examples/@{exampleName}/WEB-INF/classes"
-        deprecation="off" debug="on" optimize="off" target="1.4" source="1.4"
+        deprecation="off" debug="on" optimize="off" target="1.5" source="1.5"
         encoding="utf-8"
         includeantruntime="false"
         classpathref="ivy.dep"
-        bootclasspath="${boot.classpath.j2se1.4}"
+        bootclasspath="${boot.classpath.j2se1.5}"
       >
         <classpath>
           <pathelement path="${ivy.dep}" />
@@ -564,15 +589,15 @@
     </sequential>
   </macrodef>
   
-  <target name="example-webapp1" depends="jar">
+  <target name="example-webapp1" depends="jar" description="Build example webapp 1">
     <u:buildExampleWebapp examplename="webapp1" />
   </target>
 
-  <target name="example-webapp2" depends="jar">
+  <target name="example-webapp2" depends="jar" description="Build example webapp 2">
     <u:buildExampleWebapp examplename="webapp2" />
   </target>
 
-  <target name="example-struts-webapp" depends="jar">
+  <target name="example-struts-webapp" depends="jar" description="Build example Struts 1 webapp">
     <fail unless="struts.available"><!--
       -->You have to copy the Struts 1.1 jar-s to <!--
       -->&lt;freemarker_project>/lib/struts to build this example!<!--
@@ -583,7 +608,7 @@
     <u:buildExampleWebapp examplename="struts-webapp" />
   </target>
   
-  <target name="example-ant" depends="jar">
+  <target name="example-ant" depends="jar" description="Build Ant example">
     <mkdir dir="build/examples/ant" />
     <copy toDir="build/examples/ant">
       <fileset dir="src/examples/ant" />
@@ -604,13 +629,13 @@
       unless="has.all.explicit.boot.classpaths"
       message="All boot.classpath properties must be set in build.properties for dist!"
     />
+    <fail unless="atLeastJDK8" message="The release should be built with JDK 8+ (you may need to set JAVA_HOME)" />
     <antcall target="clean" />  <!-- To improve the reliability -->
     <antcall target="_dist" />
   </target>
 
   <target name="_dist"
-    depends="jar, javadoc, manual"
-    description="(Used internally; don't call it)"
+    depends="jar, javadoc, manualOffline"
   >
     <!-- Copy jars and sources and such into the distro -->
     <delete dir="${dist.dir}" />
@@ -620,6 +645,9 @@
     <copy todir="${dist.dir}" includeEmptyDirs="no">
       <fileset dir="." defaultexcludes="no">
         <include name="*.txt" />
+        <!-- Because of the documentation fonts, the distribution has an extended version of these: -->
+        <exclude name="LICENSE.txt" />
+        <exclude name="NOTICE.txt" />
       </fileset>
     </copy>
     <replace
@@ -633,7 +661,9 @@
 
     <!-- Copy documentation -->
     <mkdir dir="${dist.dir}/documentation" />
-    <copy file="src/dist/index.html" todir="${dist.dir}/documentation" />
+    <copy todir="${dist.dir}/">
+      <fileset dir="src/dist/" />
+    </copy>
     <copy todir="${dist.dir}/documentation/_html" includeEmptyDirs="no">
       <fileset dir="build/manual" />
     </copy>
@@ -667,14 +697,8 @@
     <gzip zipfile="${freemarker.gzip}" src="${freemarker.tar}" />
     <delete file="${freemarker.tar}" />
   </target>
-  
-  <!--
-    Uploads the freemarker.jar that is in the current DISTRIBUTION DIRECTORY
-    to a Maven repository (snapshot or central).
-    Use this after "dist" (without interleaving "clean").
-  -->
-  <target name="maven-dist"
-      description="Releases the already built distro to a Maven repository">
+
+  <target name="maven-pom">
     <echo file="build/pom.xml"><![CDATA[<?xml version="1.0" encoding="utf-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -684,7 +708,7 @@
   <parent>
     <groupId>org.sonatype.oss</groupId>
     <artifactId>oss-parent</artifactId>
-    <version>7</version>
+    <version>9</version>
   </parent>
   
   <groupId>org.freemarker</groupId>
@@ -728,7 +752,15 @@
   </dependencies>
 </project>
 ]]></echo>
-    
+  </target>
+  
+  <!--
+    Uploads the freemarker.jar that is in the current DISTRIBUTION DIRECTORY
+    to a Maven repository (snapshot or central).
+    Use this after "dist" (without interleaving "clean").
+  -->
+  <target name="maven-dist" depends="maven-pom"
+      description="Releases the already built distro to a Maven repository">
     <jar destfile="build/maven-source-attachment.jar">
       <fileset dir="${dist.dir}/source/src/main/java" />
       <fileset dir="${dist.dir}/source/src/main/resources" />
@@ -738,18 +770,12 @@
       <fileset dir="${dist.dir}/documentation/_html/api" />
     </jar>
 
-    <input
-       validargs="u,f"
-       addproperty="mavenUpload.stability"
-    >
-Will this be an [u]nstable or a [f]inal release? </input>
-    
     <property name="maven-server-id" value="ossrh" />
-    <condition property="maven-repository-url"
-        value="https://oss.sonatype.org/service/local/staging/deploy/maven2/"
-        else="https://oss.sonatype.org/content/repositories/snapshots/">
-      <equals arg1="f" arg2="${mavenUpload.stability}"/>
-    </condition>
+    <property name="maven-repository-url" value="https://oss.sonatype.org/service/local/staging/deploy/maven2/" />
+    <!--
+    Don't deploy to public snapshot repositories here!
+    It isn't backward compatible as version ranges will pick them up.
+    -->
     
     <input
        validargs="y,n"
@@ -801,10 +827,8 @@ Proceed? </input>
     
     <echo>*****************************************************************</echo>
     <echo>Check the above lines for any Maven errors!</echo>
-    <echo>If it was a final release, now you have to release the staged</echo>
-    <echo>repo on https://oss.sonatype.org/.</echo>
-    <echo>If it was an unstable release, you may check the content of</echo>
-    <echo>https://oss.sonatype.org/content/repositories/snapshots/org/.</echo>
+    <echo>Now you have to release the staged repo on</echo>
+    <echo>https://oss.sonatype.org/.</echo>
     <echo>*****************************************************************</echo>
   </target>
   
@@ -1032,6 +1056,16 @@ Proceed? </input>
     <mkdir dir="build/deps-report" />
     <ivy:resolve />
     <ivy:report todir="build/deps-report" />
+  </target>
+  
+  <target name="ide-dependencies" description="If your IDE has no Ivy support, this generates ide-lib/*.jar for it">
+    <mkdir dir="ide-dependencies" />
+    <delete includeEmptyDirs="true">  
+      <fileset dir="ide-dependencies">  
+         <include name="*/**" />  
+      </fileset>  
+    </delete>    
+    <ivy:retrieve conf="IDE" pattern="ide-dependencies/[artifact]-[revision].[ext]" />
   </target>
   
   <!--

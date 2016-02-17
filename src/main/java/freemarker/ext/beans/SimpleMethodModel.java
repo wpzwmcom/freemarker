@@ -39,20 +39,19 @@ public final class SimpleMethodModel extends SimpleMethod
     implements
     TemplateMethodModelEx,
     TemplateSequenceModel,
-    _UnexpectedTypeErrorExplainerTemplateModel
-{
+    _UnexpectedTypeErrorExplainerTemplateModel {
     private final Object object;
     private final BeansWrapper wrapper;
 
     /**
      * Creates a model for a specific method on a specific object.
-     * @param object the object to call the method on. Can be
-     * <tt>null</tt> for static methods.
+     * @param object the object to call the method on, or {@code null} for a static method.
      * @param method the method that will be invoked.
+     * @param argTypes Either pass in {@code Method#getParameterTypes() method.getParameterTypes()} here,
+     *          or reuse an earlier result of that call (for speed). Not {@code null}.
      */
     SimpleMethodModel(Object object, Method method, Class[] argTypes, 
-            BeansWrapper wrapper)
-    {
+            BeansWrapper wrapper) {
         super(method, argTypes);
         this.object = object;
         this.wrapper = wrapper;
@@ -62,29 +61,20 @@ public final class SimpleMethodModel extends SimpleMethod
      * Invokes the method, passing it the arguments from the list.
      */
     public Object exec(List arguments)
-        throws
-        TemplateModelException
-    {
-        try
-        {
-            return wrapper.invokeMethod(object, (Method)getMember(), 
+        throws TemplateModelException {
+        try {
+            return wrapper.invokeMethod(object, (Method) getMember(), 
                     unwrapArguments(arguments, wrapper));
-        }
-        catch(TemplateModelException e)
-        {
+        } catch (TemplateModelException e) {
             throw e;
-        }
-        catch(Exception e)
-        {
-            if (e instanceof TemplateModelException) throw (TemplateModelException) e;
+        } catch (Exception e) {
             throw _MethodUtil.newInvocationTemplateModelException(object, getMember(), e);
         }
     }
     
-    public TemplateModel get(int index) throws TemplateModelException
-    {
+    public TemplateModel get(int index) throws TemplateModelException {
         return (TemplateModel) exec(Collections.singletonList(
-                new SimpleNumber(new Integer(index))));
+                new SimpleNumber(Integer.valueOf(index))));
     }
 
     public int size() throws TemplateModelException {
@@ -97,6 +87,7 @@ public final class SimpleMethodModel extends SimpleMethod
                 + ")");
     }
     
+    @Override
     public String toString() {
         return getMember().toString();
     }

@@ -35,33 +35,26 @@ extends
     JythonModel
 implements 
     TemplateSequenceModel,
-    TemplateCollectionModel
-{
+    TemplateCollectionModel {
     static final ModelFactory FACTORY =
         new ModelFactory()
         {
-            public TemplateModel create(Object object, ObjectWrapper wrapper)
-            {
-                return new JythonSequenceModel((PyObject)object, (JythonWrapper)wrapper);
+            public TemplateModel create(Object object, ObjectWrapper wrapper) {
+                return new JythonSequenceModel((PyObject) object, (JythonWrapper) wrapper);
             }
         };
         
-    public JythonSequenceModel(PyObject object, JythonWrapper wrapper)
-    {
+    public JythonSequenceModel(PyObject object, JythonWrapper wrapper) {
         super(object, wrapper);
     }
 
     /**
      * Returns {@link PyObject#__finditem__(int)}.
      */
-    public TemplateModel get(int index) throws TemplateModelException
-    {
-        try
-        {
+    public TemplateModel get(int index) throws TemplateModelException {
+        try {
             return wrapper.wrap(object.__finditem__(index));
-        }
-        catch(PyException e)
-        {
+        } catch (PyException e) {
             throw new TemplateModelException(e);
         }
     }
@@ -69,31 +62,24 @@ implements
     /**
      * Returns {@link PyObject#__len__()}.
      */
-    public int size() throws TemplateModelException
-    {
-        try
-        {
+    public int size() throws TemplateModelException {
+        try {
             return object.__len__();
-        }
-        catch(PyException e)
-        {
+        } catch (PyException e) {
             throw new TemplateModelException(e);
         }
     }
 
-    public TemplateModelIterator iterator()
-    {
+    public TemplateModelIterator iterator() {
         return new TemplateModelIterator()
         {
             int i = 0;
             
-            public boolean hasNext() throws TemplateModelException
-            {
+            public boolean hasNext() throws TemplateModelException {
                 return i < size();
             }
 
-            public TemplateModel next() throws TemplateModelException
-            {
+            public TemplateModel next() throws TemplateModelException {
                 return get(i++);
             }
         };

@@ -34,7 +34,7 @@ import freemarker.template.TemplateTransformModel;
  * model are also converted. Legacy behavior was to leave newlines in the
  * data model unaltered.</p>
  *
- * <p>Usage:<br />
+ * <p>Usage:<br>
  * From java:</p>
  * <pre>
  * SimpleHash root = new SimpleHash();
@@ -61,18 +61,20 @@ import freemarker.template.TemplateTransformModel;
 public class NormalizeNewlines implements TemplateTransformModel {
 
     public Writer getWriter(final Writer out,
-                            final Map args)
-    {
-        final StringBuffer buf = new StringBuffer();
+                            final Map args) {
+        final StringBuilder buf = new StringBuilder();
         return new Writer() {
+            @Override
             public void write(char cbuf[], int off, int len) {
                 buf.append(cbuf, off, len);
             }
 
+            @Override
             public void flush() throws IOException {
                 out.flush();
             }
 
+            @Override
             public void close() throws IOException {
                 StringReader sr = new StringReader(buf.toString());
                 StringWriter sw = new StringWriter();
@@ -88,8 +90,7 @@ public class NormalizeNewlines implements TemplateTransformModel {
      * @param in the input to be transformed
      * @param out the destination of the transformation
      */
-    public void transform(Reader in, Writer out) throws IOException
-    {
+    public void transform(Reader in, Writer out) throws IOException {
         BufferedReader br = (in instanceof BufferedReader)
                             ? (BufferedReader) in
                             : new BufferedReader(in);

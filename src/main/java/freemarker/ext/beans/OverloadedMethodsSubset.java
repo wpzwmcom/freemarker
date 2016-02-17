@@ -22,8 +22,9 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
-import freemarker.core._ConcurrentMapFactory;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import freemarker.template.TemplateModelException;
 import freemarker.template.utility.ClassUtil;
 import freemarker.template.utility.NullArgumentException;
@@ -57,9 +58,7 @@ abstract class OverloadedMethodsSubset {
     // TODO: This can cause memory-leak when classes are re-loaded. However, first the genericClassIntrospectionCache
     // and such need to be fixed in this regard. 
     private final Map/*<ArgumentTypes, MaybeEmptyCallableMemberDescriptor>*/ argTypesToMemberDescCache
-            = _ConcurrentMapFactory.newMaybeConcurrentHashMap(6, 0.75f, 1);
-    private final boolean isArgTypesToMemberDescCacheConcurrentMap
-            = _ConcurrentMapFactory.isConcurrent(argTypesToMemberDescCache);
+            = new ConcurrentHashMap(6, 0.75f, 1);
     
     private final List/*<ReflectionCallableMemberDescriptor>*/ memberDescs = new LinkedList();
     
@@ -81,17 +80,17 @@ abstract class OverloadedMethodsSubset {
         // Merge these unwrapping hints with the existing table of hints:
         if (unwrappingHintsByParamCount == null) {
             unwrappingHintsByParamCount = new Class[paramCount + 1][];
-            unwrappingHintsByParamCount[paramCount] = (Class[]) prepedParamTypes.clone();
+            unwrappingHintsByParamCount[paramCount] = prepedParamTypes.clone();
         } else if (unwrappingHintsByParamCount.length <= paramCount) {
             Class[][] newUnwrappingHintsByParamCount = new Class[paramCount + 1][];
             System.arraycopy(unwrappingHintsByParamCount, 0, newUnwrappingHintsByParamCount, 0,
                     unwrappingHintsByParamCount.length);
             unwrappingHintsByParamCount = newUnwrappingHintsByParamCount;
-            unwrappingHintsByParamCount[paramCount] = (Class[]) prepedParamTypes.clone();
+            unwrappingHintsByParamCount[paramCount] = prepedParamTypes.clone();
         } else {
             Class[] unwrappingHints = unwrappingHintsByParamCount[paramCount]; 
             if (unwrappingHints == null) {
-                unwrappingHintsByParamCount[paramCount] = (Class[]) prepedParamTypes.clone();
+                unwrappingHintsByParamCount[paramCount] = prepedParamTypes.clone();
             } else {
                 for (int paramIdx = 0; paramIdx < prepedParamTypes.length; paramIdx++) {
                     // For each parameter list length, we merge the argument type arrays into a single Class[] that
@@ -131,14 +130,15 @@ abstract class OverloadedMethodsSubset {
         return unwrappingHintsByParamCount;
     }
     
+    @SuppressFBWarnings(value="JLM_JSR166_UTILCONCURRENT_MONITORENTER",
+            justification="Locks for member descriptor creation only")
     final MaybeEmptyCallableMemberDescriptor getMemberDescriptorForArgs(Object[] args, boolean varArg) {
         ArgumentTypes argTypes = new ArgumentTypes(args, bugfixed);
-        MaybeEmptyCallableMemberDescriptor memberDesc = 
-                isArgTypesToMemberDescCacheConcurrentMap
-                        ? (MaybeEmptyCallableMemberDescriptor) argTypesToMemberDescCache.get(argTypes)
-                        : null;
+        MaybeEmptyCallableMemberDescriptor memberDesc
+                = (MaybeEmptyCallableMemberDescriptor) argTypesToMemberDescCache.get(argTypes);
         if (memberDesc == null) {
-            synchronized(argTypesToMemberDescCache) {
+            // Synchronized so that we won't unnecessarily create the same member desc. for multiple times in parallel.
+            synchronized (argTypesToMemberDescCache) {
                 memberDesc = (MaybeEmptyCallableMemberDescriptor) argTypesToMemberDescCache.get(argTypes);
                 if (memberDesc == null) {
                     memberDesc = argTypes.getMostSpecific(memberDescs, varArg);
@@ -172,7 +172,7 @@ abstract class OverloadedMethodsSubset {
      * @param c2 Parameter type 2
      */
     protected Class getCommonSupertypeForUnwrappingHint(Class c1, Class c2) {
-        if(c1 == c2) return c1;
+        if (c1 == c2) return c1;
         // This also means that the hint for (Integer, Integer) will be Integer, not just Number. This is consistent
         // with how non-overloaded method hints work.
         
@@ -215,14 +215,14 @@ abstract class OverloadedMethodsSubset {
             }
             // Falls through
         } else {  // old buggy behavior
-            if(c2.isPrimitive()) {
-                if(c2 == Byte.TYPE) c2 = Byte.class;
-                else if(c2 == Short.TYPE) c2 = Short.class;
-                else if(c2 == Character.TYPE) c2 = Character.class;
-                else if(c2 == Integer.TYPE) c2 = Integer.class;
-                else if(c2 == Float.TYPE) c2 = Float.class;
-                else if(c2 == Long.TYPE) c2 = Long.class;
-                else if(c2 == Double.TYPE) c2 = Double.class;
+            if (c2.isPrimitive()) {
+                if (c2 == Byte.TYPE) c2 = Byte.class;
+                else if (c2 == Short.TYPE) c2 = Short.class;
+                else if (c2 == Character.TYPE) c2 = Character.class;
+                else if (c2 == Integer.TYPE) c2 = Integer.class;
+                else if (c2 == Float.TYPE) c2 = Float.class;
+                else if (c2 == Long.TYPE) c2 = Long.class;
+                else if (c2 == Double.TYPE) c2 = Double.class;
             }
         }
         
@@ -232,7 +232,7 @@ abstract class OverloadedMethodsSubset {
         
         Set commonTypes = _MethodUtil.getAssignables(c1, c2);
         commonTypes.retainAll(_MethodUtil.getAssignables(c2, c1));
-        if(commonTypes.isEmpty()) {
+        if (commonTypes.isEmpty()) {
             // Can happen when at least one of the arguments is an interface, as
             // they don't have Object at the root of their hierarchy
             return Object.class;
@@ -243,15 +243,15 @@ abstract class OverloadedMethodsSubset {
         // and Number.class, you'll have Comparable, Serializable, and Object as 
         // maximal elements. 
         List max = new ArrayList();
-        listCommonTypes:  for (Iterator commonTypesIter = commonTypes.iterator(); commonTypesIter.hasNext();) {
-            Class clazz = (Class)commonTypesIter.next();
-            for (Iterator maxIter = max.iterator(); maxIter.hasNext();) {
-                Class maxClazz = (Class)maxIter.next();
-                if(_MethodUtil.isMoreOrSameSpecificParameterType(maxClazz, clazz, false /*bugfixed [1]*/, 0) != 0) {
+        listCommonTypes:  for (Iterator commonTypesIter = commonTypes.iterator(); commonTypesIter.hasNext(); ) {
+            Class clazz = (Class) commonTypesIter.next();
+            for (Iterator maxIter = max.iterator(); maxIter.hasNext(); ) {
+                Class maxClazz = (Class) maxIter.next();
+                if (_MethodUtil.isMoreOrSameSpecificParameterType(maxClazz, clazz, false /*bugfixed [1]*/, 0) != 0) {
                     // clazz can't be maximal, if there's already a more specific or equal maximal than it.
                     continue listCommonTypes;
                 }
-                if(_MethodUtil.isMoreOrSameSpecificParameterType(clazz, maxClazz, false /*bugfixed [1]*/, 0) != 0) {
+                if (_MethodUtil.isMoreOrSameSpecificParameterType(clazz, maxClazz, false /*bugfixed [1]*/, 0) != 0) {
                     // If it's more specific than a currently maximal element,
                     // that currently maximal is no longer a maximal.
                     maxIter.remove();
@@ -268,7 +268,7 @@ abstract class OverloadedMethodsSubset {
         if (max.size() > 1) {  // we have an ambiguity
             if (bugfixed) {
                 // Find the non-interface class
-                for (Iterator it = max.iterator(); it.hasNext();) {
+                for (Iterator it = max.iterator(); it.hasNext(); ) {
                     Class maxCl = (Class) it.next();
                     if (!maxCl.isInterface()) {
                         if (maxCl != Object.class) {  // This actually shouldn't ever happen, but to be sure...

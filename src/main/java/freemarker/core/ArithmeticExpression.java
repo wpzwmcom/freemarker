@@ -21,8 +21,8 @@ import freemarker.template.TemplateException;
 import freemarker.template.TemplateModel;
 
 /**
- * An operator for arithmetic operations. Note that the + operator
- * also does string concatenation for backward compatibility.
+ * An operator for arithmetic operations. Note that the + operator is in {@link AddConcatExpression}, because its
+ * overloaded (does string concatenation and more).
  */
 final class ArithmeticExpression extends Expression {
 
@@ -43,15 +43,14 @@ final class ArithmeticExpression extends Expression {
         this.operator = operator;
     }
 
-    TemplateModel _eval(Environment env) throws TemplateException 
-    {
-        Number lhoNumber = lho.evalToNumber(env);
-        Number rhoNumber = rho.evalToNumber(env);
-        
-        ArithmeticEngine ae = 
-            env != null 
-                ? env.getArithmeticEngine()
-                : getTemplate().getArithmeticEngine();
+    @Override
+    TemplateModel _eval(Environment env) throws TemplateException {
+        return _eval(env, this, lho.evalToNumber(env), operator, rho.evalToNumber(env));
+    }
+
+    static TemplateModel _eval(Environment env, TemplateObject parent, Number lhoNumber, int operator, Number rhoNumber)
+            throws TemplateException, _MiscTemplateException {
+        ArithmeticEngine ae = EvalUtil.getArithmeticEngine(env, parent); 
         switch (operator) {
             case TYPE_SUBSTRACTION : 
                 return new SimpleNumber(ae.subtract(lhoNumber, rhoNumber));
@@ -62,23 +61,35 @@ final class ArithmeticExpression extends Expression {
             case TYPE_MODULO :
                 return new SimpleNumber(ae.modulus(lhoNumber, rhoNumber));
             default:
-                throw new _MiscTemplateException(this, new Object[] {
-                        "Unknown operation: ", new Integer(operator) });
+                if (parent instanceof Expression) {
+                    throw new _MiscTemplateException((Expression) parent,
+                            "Unknown operation: ", Integer.valueOf(operator));
+                } else {
+                    throw new _MiscTemplateException("Unknown operation: ", Integer.valueOf(operator));
+                }
         }
     }
 
+    @Override
     public String getCanonicalForm() {
-        return lho.getCanonicalForm() + ' ' + OPERATOR_IMAGES[operator] + ' ' + rho.getCanonicalForm();
+        return lho.getCanonicalForm() + ' ' + getOperatorSymbol(operator) + ' ' + rho.getCanonicalForm();
     }
     
+    @Override
     String getNodeTypeSymbol() {
-        return String.valueOf(OPERATOR_IMAGES[operator]);
+        return String.valueOf(getOperatorSymbol(operator));
+    }
+
+    static char getOperatorSymbol(int operator) {
+        return OPERATOR_IMAGES[operator];
     }
     
+    @Override
     boolean isLiteral() {
         return constantValue != null || (lho.isLiteral() && rho.isLiteral());
     }
 
+    @Override
     protected Expression deepCloneWithIdentifierReplaced_inner(
             String replacedIdentifier, Expression replacement, ReplacemenetState replacementState) {
     	return new ArithmeticExpression(
@@ -87,19 +98,22 @@ final class ArithmeticExpression extends Expression {
     	        operator);
     }
     
+    @Override
     int getParameterCount() {
         return 3;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         switch (idx) {
         case 0: return lho;
         case 1: return rho;
-        case 2: return new Integer(operator);
+        case 2: return Integer.valueOf(operator);
         default: throw new IndexOutOfBoundsException();
         }
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         switch (idx) {
         case 0: return ParameterRole.LEFT_HAND_OPERAND;

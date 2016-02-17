@@ -37,15 +37,13 @@ import freemarker.template.TemplateModelException;
  * Unfortunately, there is currently no support for bean property-style
  * calls of static methods, similar to that in {@link BeanModel}.
  */
-final class StaticModel implements TemplateHashModelEx
-{
-    private static final Logger logger = Logger.getLogger("freemarker.beans");
+final class StaticModel implements TemplateHashModelEx {
+    private static final Logger LOG = Logger.getLogger("freemarker.beans");
     private final Class clazz;
     private final BeansWrapper wrapper;
     private final Map map = new HashMap();
 
-    StaticModel(Class clazz, BeansWrapper wrapper) throws TemplateModelException
-    {
+    StaticModel(Class clazz, BeansWrapper wrapper) throws TemplateModelException {
         this.clazz = clazz;
         this.wrapper = wrapper;
         populate();
@@ -55,22 +53,17 @@ final class StaticModel implements TemplateHashModelEx
      * Returns the field or method named by the <tt>key</tt>
      * parameter.
      */
-    public TemplateModel get(String key) throws TemplateModelException
-    {
+    public TemplateModel get(String key) throws TemplateModelException {
         Object model = map.get(key);
         // Simple method, overloaded method or final field -- these have cached 
         // template models
         if (model instanceof TemplateModel)
             return (TemplateModel) model;
         // Non-final field; this must be evaluated on each call.
-        if (model instanceof Field)
-        {
-            try
-            {
+        if (model instanceof Field) {
+            try {
                 return wrapper.getOuterIdentity().wrap(((Field) model).get(null));
-            }
-            catch (IllegalAccessException e)
-            {
+            } catch (IllegalAccessException e) {
                 throw new TemplateModelException(
                     "Illegal access for field " + key + " of class " + clazz.getName());
             }
@@ -84,94 +77,72 @@ final class StaticModel implements TemplateHashModelEx
      * Returns true if there is at least one public static
      * field or method in the underlying class.
      */
-    public boolean isEmpty()
-    {
+    public boolean isEmpty() {
         return map.isEmpty();
     }
 
-    public int size()
-    {
+    public int size() {
         return map.size();
     }
     
-    public TemplateCollectionModel keys() throws TemplateModelException
-    {
-        return (TemplateCollectionModel)wrapper.getOuterIdentity().wrap(map.keySet());
+    public TemplateCollectionModel keys() throws TemplateModelException {
+        return (TemplateCollectionModel) wrapper.getOuterIdentity().wrap(map.keySet());
     }
     
-    public TemplateCollectionModel values() throws TemplateModelException
-    {
-        return (TemplateCollectionModel)wrapper.getOuterIdentity().wrap(map.values());
+    public TemplateCollectionModel values() throws TemplateModelException {
+        return (TemplateCollectionModel) wrapper.getOuterIdentity().wrap(map.values());
     }
 
-    private void populate() throws TemplateModelException
-    {
-        if (!Modifier.isPublic(clazz.getModifiers()))
-        {
+    private void populate() throws TemplateModelException {
+        if (!Modifier.isPublic(clazz.getModifiers())) {
             throw new TemplateModelException(
                 "Can't wrap the non-public class " + clazz.getName());
         }
         
-        if(wrapper.getExposureLevel() == BeansWrapper.EXPOSE_NOTHING)
-        {
+        if (wrapper.getExposureLevel() == BeansWrapper.EXPOSE_NOTHING) {
             return;
         }
 
         Field[] fields = clazz.getFields();
-        for (int i = 0; i < fields.length; ++i)
-        {
+        for (int i = 0; i < fields.length; ++i) {
             Field field = fields[i];
             int mod = field.getModifiers();
-            if (Modifier.isPublic(mod) && Modifier.isStatic(mod))
-            {
+            if (Modifier.isPublic(mod) && Modifier.isStatic(mod)) {
                 if (Modifier.isFinal(mod))
-                    try
-                    {
+                    try {
                         // public static final fields are evaluated once and
                         // stored in the map
                         map.put(field.getName(), wrapper.getOuterIdentity().wrap(field.get(null)));
-                    }
-                    catch (IllegalAccessException e)
-                    {
+                    } catch (IllegalAccessException e) {
                         // Intentionally ignored
-                    }
-                else
+                    } else
                     // This is a special flagging value: Field in the map means
                     // that this is a non-final field, and it must be evaluated
                     // on each get() call.
                     map.put(field.getName(), field);
             }
         }
-        if(wrapper.getExposureLevel() < BeansWrapper.EXPOSE_PROPERTIES_ONLY)
-        {
+        if (wrapper.getExposureLevel() < BeansWrapper.EXPOSE_PROPERTIES_ONLY) {
             Method[] methods = clazz.getMethods();
-            for (int i = 0; i < methods.length; ++i)
-            {
+            for (int i = 0; i < methods.length; ++i) {
                 Method method = methods[i];
                 int mod = method.getModifiers();
                 if (Modifier.isPublic(mod) && Modifier.isStatic(mod)
-                        && wrapper.getClassIntrospector().isAllowedToExpose(method))
-                {
+                        && wrapper.getClassIntrospector().isAllowedToExpose(method)) {
                     String name = method.getName();
                     Object obj = map.get(name);
-                    if (obj instanceof Method)
-                    {
+                    if (obj instanceof Method) {
                         OverloadedMethods overloadedMethods = new OverloadedMethods(wrapper.is2321Bugfixed());
                         overloadedMethods.addMethod((Method) obj);
                         overloadedMethods.addMethod(method);
                         map.put(name, overloadedMethods);
-                    }
-                    else if(obj instanceof OverloadedMethods)
-                    {
+                    } else if (obj instanceof OverloadedMethods) {
                         OverloadedMethods overloadedMethods = (OverloadedMethods) obj;
                         overloadedMethods.addMethod(method);
-                    }
-                    else
-                    {
-                        if(obj != null)
-                        {
-                            if (logger.isInfoEnabled()) {
-                                logger.info("Overwriting value [" + obj + "] for " +
+                    } else {
+                        if (obj != null) {
+                            if (LOG.isInfoEnabled()) {
+                                LOG.info("Overwriting value [" + obj + "] for " +
                                         " key '" + name + "' with [" + method + 
                                         "] in static model for " + clazz.getName());
                             }
@@ -180,18 +151,14 @@ final class StaticModel implements TemplateHashModelEx
                     }
                 }
             }
-            for (Iterator entries = map.entrySet().iterator(); entries.hasNext();)
-            {
+            for (Iterator entries = map.entrySet().iterator(); entries.hasNext(); ) {
                 Map.Entry entry = (Map.Entry) entries.next();
                 Object value = entry.getValue();
-                if (value instanceof Method)
-                {
-                    Method method = (Method)value;
+                if (value instanceof Method) {
+                    Method method = (Method) value;
                     entry.setValue(new SimpleMethodModel(null, method, 
                             method.getParameterTypes(), wrapper));
-                }
-                else if (value instanceof OverloadedMethods)
-                {
+                } else if (value instanceof OverloadedMethods) {
                     entry.setValue(new OverloadedMethodsModel(null, (OverloadedMethods) value, wrapper));
                 }
             }

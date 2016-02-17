@@ -34,9 +34,9 @@ import freemarker.template.TemplateTransformModel;
  * access it from the templates:</p>
  *
  * <pre>
- * &lt;@capture_output var="captured">
+ * &lt;@capture_output var="captured"&gt;
  *   ...
- * &lt;/@capture_output>
+ * &lt;/@capture_output&gt;
  * </pre>
  *
  * <p>And later in the template you can use the captured output:</p>
@@ -45,16 +45,17 @@ import freemarker.template.TemplateTransformModel;
  *
  * <p>This transform requires one of three parameters: <code>var</code>, <code>local</code>, or <code>global</code>.
  * Each of them specifies the name of the variable that stores the captured output, but the first creates a
- * variable in a name-space (as &lt;#assign>), the second creates a macro-local variable (as &lt;#local>),
- * and the last creates a global variable (as &lt;#global>).
+ * variable in a name-space (as &lt;#assign&gt;), the second creates a macro-local variable (as &lt;#local&gt;),
+ * and the last creates a global variable (as &lt;#global&gt;).
  * </p>
  * <p>In the case of an assignment within a namespace, there is an optional parameter
  * <code>namespace</code> that indicates in which namespace to do the assignment.
  * if this is omitted, the current namespace is used, and this will be, by far, the most
  * common usage pattern.</p>
  *
- * @deprecated Use block-assignments instead, as <code>&lt;assign x>...&lt;/assign></code>.
+ * @deprecated Use block-assignments instead, like <code>&lt;assign x&gt;...&lt;/assign&gt;</code>.
  */
+@Deprecated
 public class CaptureOutput implements TemplateTransformModel {
 
     public Writer getWriter(final Writer out, final Map args) throws TemplateModelException {
@@ -62,7 +63,7 @@ public class CaptureOutput implements TemplateTransformModel {
                 + "which to capture the output with the 'var' or 'local' or 'global' parameter.";
         if (args == null) throw new TemplateModelException(errmsg);
 
-        boolean local = false, global=false;
+        boolean local = false, global = false;
         final TemplateModel nsModel = (TemplateModel) args.get("namespace");
         Object varNameModel = args.get("var");
         if (varNameModel == null) {
@@ -77,7 +78,7 @@ public class CaptureOutput implements TemplateTransformModel {
                 throw new TemplateModelException(errmsg);
             }
         }
-        if (args.size()==2) {
+        if (args.size() == 2) {
             if (nsModel == null) {
                 throw new TemplateModelException("Second parameter can only be namespace");
             }
@@ -90,33 +91,35 @@ public class CaptureOutput implements TemplateTransformModel {
             if (!(nsModel instanceof Environment.Namespace)) {
                 throw new TemplateModelException("namespace parameter does not specify a namespace. It is a " + nsModel.getClass().getName());
             }
-        }
-        else if (args.size() != 1) throw new TemplateModelException(
+        } else if (args.size() != 1) throw new TemplateModelException(
                 "Bad parameters. Use only one of 'var' or 'local' or 'global' parameters.");
 
-        if(!(varNameModel instanceof TemplateScalarModel)) {
+        if (!(varNameModel instanceof TemplateScalarModel)) {
             throw new TemplateModelException("'var' or 'local' or 'global' parameter doesn't evaluate to a string");
         }
         final String varName = ((TemplateScalarModel) varNameModel).getAsString();
-        if(varName == null) {
+        if (varName == null) {
             throw new TemplateModelException("'var' or 'local' or 'global' parameter evaluates to null string");
         }
 
-        final StringBuffer buf = new StringBuffer();
+        final StringBuilder buf = new StringBuilder();
         final Environment env = Environment.getCurrentEnvironment();
         final boolean localVar = local;
         final boolean globalVar = global;
 
         return new Writer() {
 
+            @Override
             public void write(char cbuf[], int off, int len) {
                 buf.append(cbuf, off, len);
             }
 
+            @Override
             public void flush() throws IOException {
                 out.flush();
             }
 
+            @Override
             public void close() throws IOException {
                 SimpleScalar result = new SimpleScalar(buf.toString());
                 try {
@@ -124,8 +127,7 @@ public class CaptureOutput implements TemplateTransformModel {
                         env.setLocalVariable(varName, result);
                     } else if (globalVar) {
                         env.setGlobalVariable(varName, result);
-                    }
-                    else {
+                    } else {
                         if (nsModel == null) {
                             env.setVariable(varName, result);
                         } else {

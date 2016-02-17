@@ -30,14 +30,12 @@ public class NumberModel
 extends
     BeanModel
 implements
-    TemplateNumberModel
-{
+    TemplateNumberModel {
     static final ModelFactory FACTORY =
         new ModelFactory()
         {
-            public TemplateModel create(Object object, ObjectWrapper wrapper)
-            {
-                return new NumberModel((Number)object, (BeansWrapper)wrapper);
+            public TemplateModel create(Object object, ObjectWrapper wrapper) {
+                return new NumberModel((Number) object, (BeansWrapper) wrapper);
             }
         };
     /**
@@ -48,13 +46,11 @@ implements
      * model gains many attributes from its wrapper, including the caching 
      * behavior, method exposure level, method-over-item shadowing policy etc.
      */
-    public NumberModel(Number number, BeansWrapper wrapper)
-    {
+    public NumberModel(Number number, BeansWrapper wrapper) {
         super(number, wrapper);
     }
 
-    public Number getAsNumber()
-    {
-        return (Number)object;
+    public Number getAsNumber() {
+        return (Number) object;
     }
 }

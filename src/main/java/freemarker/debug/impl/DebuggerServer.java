@@ -35,9 +35,8 @@ import freemarker.template.utility.UndeclaredThrowableException;
 
 /**
  */
-class DebuggerServer
-{
-    private static final Logger logger = Logger.getLogger("freemarker.debug.server");
+class DebuggerServer {
+    private static final Logger LOG = Logger.getLogger("freemarker.debug.server");
     // TODO: Eventually replace with Yarrow    
     private static final Random R = new SecureRandom();
     
@@ -47,61 +46,46 @@ class DebuggerServer
     private boolean stop = false;
     private ServerSocket serverSocket;
     
-    public DebuggerServer(Serializable debuggerStub)
-    {
+    public DebuggerServer(Serializable debuggerStub) {
         port = SecurityUtilities.getSystemProperty("freemarker.debug.port", Debugger.DEFAULT_PORT).intValue();
-        try
-        {
+        try {
             password = SecurityUtilities.getSystemProperty("freemarker.debug.password", "").getBytes("UTF-8");
-        }
-        catch (UnsupportedEncodingException e)
-        {
+        } catch (UnsupportedEncodingException e) {
             throw new UndeclaredThrowableException(e);
         }
         this.debuggerStub = debuggerStub;
     }
     
-    public void start()
-    {
+    public void start() {
         new Thread(new Runnable()
         {
-            public void run()
-            {
+            public void run() {
                 startInternal();
             }
         }, "FreeMarker Debugger Server Acceptor").start();
     }
     
-    private void startInternal()
-    {
-        try
-        {
+    private void startInternal() {
+        try {
             serverSocket = new ServerSocket(port);
-            while(!stop)
-            {
+            while (!stop) {
                 Socket s = serverSocket.accept();
                 new Thread(new DebuggerAuthProtocol(s)).start();
             }
-        }
-        catch(IOException e)
-        {
-            logger.error("Debugger server shut down.", e);
+        } catch (IOException e) {
+            LOG.error("Debugger server shut down.", e);
         }
     }
     
-    private class DebuggerAuthProtocol implements Runnable
-    {
+    private class DebuggerAuthProtocol implements Runnable {
         private final Socket s;
         
-        DebuggerAuthProtocol(Socket s)
-        {
+        DebuggerAuthProtocol(Socket s) {
             this.s = s;
         }
         
-        public void run()
-        {
-            try
-            {
+        public void run() {
+            try {
                 ObjectOutputStream out = new ObjectOutputStream(s.getOutputStream());
                 ObjectInputStream in = new ObjectInputStream(s.getInputStream());
                 byte[] challenge = new byte[512];
@@ -111,36 +95,26 @@ class DebuggerServer
                 MessageDigest md = MessageDigest.getInstance("SHA");
                 md.update(password);
                 md.update(challenge);
-                byte[] response = (byte[])in.readObject();
-                if(Arrays.equals(response, md.digest()))
-                {
+                byte[] response = (byte[]) in.readObject();
+                if (Arrays.equals(response, md.digest())) {
                     out.writeObject(debuggerStub);
-                }
-                else
-                {
+                } else {
                     out.writeObject(null);
                 }
-            }
-            catch(Exception e)
-            {
-                logger.warn("Connection to " + s.getInetAddress().getHostAddress() + " abruply broke", e);
+            } catch (Exception e) {
+                LOG.warn("Connection to " + s.getInetAddress().getHostAddress() + " abruply broke", e);
             }
         }
 
     }
 
-    public void stop()
-    {
+    public void stop() {
         this.stop = true;
-        if(serverSocket != null)
-        {
-            try
-            {
+        if (serverSocket != null) {
+            try {
                 serverSocket.close();
-            }
-            catch(IOException e)
-            {
-                logger.error("Unable to close server socket.", e);
+            } catch (IOException e) {
+                LOG.error("Unable to close server socket.", e);
             }
         }
     }

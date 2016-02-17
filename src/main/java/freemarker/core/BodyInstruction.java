@@ -51,38 +51,44 @@ final class BodyInstruction extends TemplateElement {
      * what it was before macro invocation to implement this properly.
      * I (JR) realized this thanks to some incisive comments from Daniel Dekany.
      */
+    @Override
     void accept(Environment env) throws IOException, TemplateException {
         Context bodyContext = new Context(env);
-        env.visit(bodyContext);
+        env.invokeNestedContent(bodyContext);
     }
 
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         if (canonical) sb.append('<');
         sb.append(getNodeTypeSymbol());
         if (bodyParameters != null) {
-            for (int i = 0; i<bodyParameters.size(); i++) {
+            for (int i = 0; i < bodyParameters.size(); i++) {
                 sb.append(' ');
-                sb.append(bodyParameters.get(i));
+                sb.append(((Expression) bodyParameters.get(i)).getCanonicalForm());
             }
         }
         if (canonical) sb.append('>');
         return sb.toString();
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return "#nested";
     }
     
+    @Override
     int getParameterCount() {
         return bodyParameters != null ? bodyParameters.size() : 0;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         checkIndex(idx);
         return bodyParameters.get(idx);
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         checkIndex(idx);
         return ParameterRole.PASSED_VALUE;
@@ -110,9 +116,9 @@ final class BodyInstruction extends TemplateElement {
         
         Context(Environment env) throws TemplateException {
             invokingMacroContext = env.getCurrentMacroContext();
-            List bodyParameterNames = invokingMacroContext.bodyParameterNames;
+            List bodyParameterNames = invokingMacroContext.nestedContentParameterNames;
             if (bodyParameters != null) {
-                for (int i=0; i<bodyParameters.size(); i++) {
+                for (int i = 0; i < bodyParameters.size(); i++) {
                     Expression exp = (Expression) bodyParameters.get(i);
                     TemplateModel tm = exp.eval(env);
                     if (bodyParameterNames != null && i < bodyParameterNames.size()) {
@@ -131,8 +137,13 @@ final class BodyInstruction extends TemplateElement {
         }
         
         public Collection getLocalVariableNames() {
-            List bodyParameterNames = invokingMacroContext.bodyParameterNames;
+            List bodyParameterNames = invokingMacroContext.nestedContentParameterNames;
             return bodyParameterNames == null ? Collections.EMPTY_LIST : bodyParameterNames;
         }
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
     }
 }

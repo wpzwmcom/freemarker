@@ -50,50 +50,51 @@ final class MethodCall extends Expression {
         this.arguments = arguments;
     }
 
-    TemplateModel _eval(Environment env) throws TemplateException
-    {
+    @Override
+    TemplateModel _eval(Environment env) throws TemplateException {
         TemplateModel targetModel = target.eval(env);
         if (targetModel instanceof TemplateMethodModel) {
-            TemplateMethodModel targetMethod = (TemplateMethodModel)targetModel;
+            TemplateMethodModel targetMethod = (TemplateMethodModel) targetModel;
             List argumentStrings = 
             targetMethod instanceof TemplateMethodModelEx
             ? arguments.getModelList(env)
             : arguments.getValueList(env);
             Object result = targetMethod.exec(argumentStrings);
             return env.getObjectWrapper().wrap(result);
-        }
-        else if (targetModel instanceof Macro) {
+        } else if (targetModel instanceof Macro) {
             Macro func = (Macro) targetModel;
             env.setLastReturnValue(null);
-            if (!func.isFunction) {
-                throw new _MiscTemplateException(env, "A macro cannot be called in an expression.");
+            if (!func.isFunction()) {
+                throw new _MiscTemplateException(env, "A macro cannot be called in an expression. (Functions can be.)");
             }
             Writer prevOut = env.getOut();
             try {
                 env.setOut(NullWriter.INSTANCE);
-                env.visit(func, null, arguments.items, null, null);
-            } catch (IOException ioe) {
-                throw new InternalError("This should be impossible.");
+                env.invoke(func, null, arguments.items, null, null);
+            } catch (IOException e) {
+                // Should not occur
+                throw new TemplateException("Unexpected exception during function execution", e, env);
             } finally {
                 env.setOut(prevOut);
             }
             return env.getLastReturnValue();
-        }
-        else {
+        } else {
             throw new NonMethodException(target, targetModel, env);
         }
     }
 
+    @Override
     public String getCanonicalForm() {
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         buf.append(target.getCanonicalForm());
         buf.append("(");
         String list = arguments.getCanonicalForm();
-        buf.append(list.substring(1, list.length() -1));
+        buf.append(list.substring(1, list.length() - 1));
         buf.append(")");
         return buf.toString();
     }
 
+    @Override
     String getNodeTypeSymbol() {
         return "...(...)";
     }
@@ -102,21 +103,25 @@ final class MethodCall extends Expression {
         return null;
     }
 
+    @Override
     boolean isLiteral() {
         return false;
     }
 
+    @Override
     protected Expression deepCloneWithIdentifierReplaced_inner(
             String replacedIdentifier, Expression replacement, ReplacemenetState replacementState) {
         return new MethodCall(
                 target.deepCloneWithIdentifierReplaced(replacedIdentifier, replacement, replacementState),
-                (ListLiteral)arguments.deepCloneWithIdentifierReplaced(replacedIdentifier, replacement, replacementState));
+                (ListLiteral) arguments.deepCloneWithIdentifierReplaced(replacedIdentifier, replacement, replacementState));
     }
 
+    @Override
     int getParameterCount() {
         return 1 + arguments.items.size();
     }
 
+    @Override
     Object getParameterValue(int idx) {
         if (idx == 0) {
             return target;
@@ -127,6 +132,7 @@ final class MethodCall extends Expression {
         }
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         if (idx == 0) {
             return ParameterRole.CALLEE;

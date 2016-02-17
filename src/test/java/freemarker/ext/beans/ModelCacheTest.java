@@ -16,10 +16,7 @@
 
 package freemarker.ext.beans;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotSame;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -33,7 +30,7 @@ public class ModelCacheTest {
     
     @Test
     public void modelCacheOff() throws Exception {
-        BeansWrapper bw = new BeansWrapperBuilder(Configuration.VERSION_2_3_21).getResult();
+        BeansWrapper bw = new BeansWrapperBuilder(Configuration.VERSION_2_3_21).build();
         assertFalse(bw.getUseCache());  // default is off
         
         String s = "foo";

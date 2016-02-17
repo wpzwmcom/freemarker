@@ -35,7 +35,7 @@ import freemarker.template.utility.StringUtil;
  */
 public class _ErrorDescriptionBuilder {
 
-    private static final Logger logger = Logger.getLogger("freemarker.runtime");
+    private static final Logger LOG = Logger.getLogger("freemarker.runtime");
 
     private final String description;
     private final Object[] descriptionParts;
@@ -55,11 +55,12 @@ public class _ErrorDescriptionBuilder {
      *      {@link String} array items that look like FTL tag (must start with {@code "&lt;"} and end with {@code ">"})
      *      will be converted to the actual template syntax if {@link #blamed} or {@link #template} was set.
      */
-    public _ErrorDescriptionBuilder(Object[] descriptionParts) {
+    public _ErrorDescriptionBuilder(Object... descriptionParts) {
         this.descriptionParts = descriptionParts;
         this.description = null;
     }
 
+    @Override
     public String toString() {
         return toString(null, true);
     }
@@ -67,7 +68,7 @@ public class _ErrorDescriptionBuilder {
     public String toString(TemplateElement parentElement, boolean showTips) {
         if (blamed == null && tips == null && tip == null && descriptionParts == null) return description;
 
-        StringBuffer sb = new StringBuffer(200);
+        StringBuilder sb = new StringBuilder(200);
         
         if (parentElement != null && blamed != null && showBlamer) {
             try {
@@ -82,7 +83,7 @@ public class _ErrorDescriptionBuilder {
             } catch (Throwable e) {
                 // Should not happen. But we rather give a not-so-good error message than replace it with another...
                 // So we ignore this.
-                logger.error("Error when searching blamer for better error message.", e);
+                LOG.error("Error when searching blamer for better error message.", e);
             }
         }
         
@@ -147,6 +148,7 @@ public class _ErrorDescriptionBuilder {
                 sb.append("\n\n");
                 for (int i = 0; i < allTips.length; i++) {
                     if (i != 0) sb.append('\n');
+                    sb.append(_CoreAPI.ERROR_MESSAGE_HR).append('\n');
                     sb.append("Tip: ");
                     Object tip = allTips[i];
                     if (!(tip instanceof Object[])) {
@@ -155,6 +157,7 @@ public class _ErrorDescriptionBuilder {
                         appendParts(sb, (Object[]) tip);
                     }
                 }
+                sb.append('\n').append(_CoreAPI.ERROR_MESSAGE_HR);
             }
         }
         
@@ -201,7 +204,7 @@ public class _ErrorDescriptionBuilder {
         return null;
     }
 
-    private void appendParts(StringBuffer sb, Object[] parts) {
+    private void appendParts(StringBuilder sb, Object[] parts) {
         Template template = this.template != null ? this.template : (blamed != null ? blamed.getTemplate() : null); 
         for (int i = 0; i < parts.length; i++) {
             Object partObj = parts[i];
@@ -294,7 +297,7 @@ public class _ErrorDescriptionBuilder {
         return this;
     }
     
-    public _ErrorDescriptionBuilder tip(Object tip[]) {
+    public _ErrorDescriptionBuilder tip(Object... tip) {
         tip((Object) tip);
         return this;
     }
@@ -319,7 +322,7 @@ public class _ErrorDescriptionBuilder {
         return this;
     }
     
-    public _ErrorDescriptionBuilder tips(Object[] tips) {
+    public _ErrorDescriptionBuilder tips(Object... tips) {
         if (this.tips == null) {
             this.tips = tips;
         } else {

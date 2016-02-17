@@ -21,7 +21,6 @@ import freemarker.template.TemplateException;
 /**
  * A class that handles comparisons.
  */
-
 final class ComparisonExpression extends BooleanExpression {
 
     private final Expression left;
@@ -36,23 +35,17 @@ final class ComparisonExpression extends BooleanExpression {
         this.opString = opString;
         if (opString == "==" || opString == "=") {
             operation = EvalUtil.CMP_OP_EQUALS;
-        }
-        else if (opString == "!=") {
+        } else if (opString == "!=") {
             operation = EvalUtil.CMP_OP_NOT_EQUALS;
-        }
-        else if (opString == "gt" || opString == "\\gt" || opString == ">" || opString == "&gt;") {
+        } else if (opString == "gt" || opString == "\\gt" || opString == ">" || opString == "&gt;") {
             operation = EvalUtil.CMP_OP_GREATER_THAN;
-        }
-        else if (opString == "gte" || opString == "\\gte" || opString == ">=" || opString == "&gt;=") {
+        } else if (opString == "gte" || opString == "\\gte" || opString == ">=" || opString == "&gt;=") {
             operation = EvalUtil.CMP_OP_GREATER_THAN_EQUALS;
-        }
-        else if (opString== "lt" || opString == "\\lt" || opString == "<" || opString == "&lt;") {
+        } else if (opString == "lt" || opString == "\\lt" || opString == "<" || opString == "&lt;") {
             operation = EvalUtil.CMP_OP_LESS_THAN;
-        }
-        else if (opString == "lte" || opString == "\\lte" || opString == "<=" || opString == "&lt;=") {
+        } else if (opString == "lte" || opString == "\\lte" || opString == "<=" || opString == "&lt;=") {
             operation = EvalUtil.CMP_OP_LESS_THAN_EQUALS;
-        }
-        else {
+        } else {
             throw new BugException("Unknown comparison operator " + opString);
         }
     }
@@ -61,22 +54,27 @@ final class ComparisonExpression extends BooleanExpression {
      * WARNING! This algorithm is duplicated in SequenceBuiltins.modelsEqual.
      * Thus, if you update this method, then you have to update that too!
      */
+    @Override
     boolean evalToBoolean(Environment env) throws TemplateException {
         return EvalUtil.compare(left, operation, opString, right, this, env);
     }
 
+    @Override
     public String getCanonicalForm() {
         return left.getCanonicalForm() + ' ' + opString + ' ' + right.getCanonicalForm();
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return opString;
     }
 
+    @Override
     boolean isLiteral() {
         return constantValue != null || (left.isLiteral() && right.isLiteral());
     }
 
+    @Override
     protected Expression deepCloneWithIdentifierReplaced_inner(
             String replacedIdentifier, Expression replacement, ReplacemenetState replacementState) {
     	return new ComparisonExpression(
@@ -85,14 +83,17 @@ final class ComparisonExpression extends BooleanExpression {
     	        opString);
     }
     
+    @Override
     int getParameterCount() {
         return 2;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         return idx == 0 ? left : right;
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         return ParameterRole.forBinaryOperatorOperand(idx);
     }

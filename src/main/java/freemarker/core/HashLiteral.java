@@ -41,30 +41,34 @@ final class HashLiteral extends Expression {
         values.trimToSize();
     }
 
+    @Override
     TemplateModel _eval(Environment env) throws TemplateException {
         return new SequenceHash(env);
     }
 
+    @Override
     public String getCanonicalForm() {
-        StringBuffer buf = new StringBuffer("{");
+        StringBuilder buf = new StringBuilder("{");
         for (int i = 0; i < size; i++) {
             Expression key = (Expression) keys.get(i);
             Expression value = (Expression) values.get(i);
             buf.append(key.getCanonicalForm());
-            buf.append(" : ");
+            buf.append(": ");
             buf.append(value.getCanonicalForm());
-            if (i != size-1) {
-                buf.append(",");
+            if (i != size - 1) {
+                buf.append(", ");
             }
         }
         buf.append("}");
         return buf.toString();
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return "{...}";
     }
 
+    @Override
     boolean isLiteral() {
         if (constantValue != null) {
             return true;
@@ -80,16 +84,17 @@ final class HashLiteral extends Expression {
     }
 
 
+    @Override
     protected Expression deepCloneWithIdentifierReplaced_inner(
             String replacedIdentifier, Expression replacement, ReplacemenetState replacementState) {
-		ArrayList clonedKeys = (ArrayList)keys.clone();
-		for (ListIterator iter = clonedKeys.listIterator(); iter.hasNext();) {
-            iter.set(((Expression)iter.next()).deepCloneWithIdentifierReplaced(
+		ArrayList clonedKeys = (ArrayList) keys.clone();
+		for (ListIterator iter = clonedKeys.listIterator(); iter.hasNext(); ) {
+            iter.set(((Expression) iter.next()).deepCloneWithIdentifierReplaced(
                     replacedIdentifier, replacement, replacementState));
         }
-		ArrayList clonedValues = (ArrayList)values.clone();
-		for (ListIterator iter = clonedValues.listIterator(); iter.hasNext();) {
-            iter.set(((Expression)iter.next()).deepCloneWithIdentifierReplaced(
+		ArrayList clonedValues = (ArrayList) values.clone();
+		for (ListIterator iter = clonedValues.listIterator(); iter.hasNext(); ) {
+            iter.set(((Expression) iter.next()).deepCloneWithIdentifierReplaced(
                     replacedIdentifier, replacement, replacementState));
         }
     	return new HashLiteral(clonedKeys, clonedValues);
@@ -119,7 +124,7 @@ final class HashLiteral extends Expression {
                 map = new HashMap();
                 ArrayList keyList = new ArrayList(size);
                 ArrayList valueList = new ArrayList(size);
-                for (int i = 0; i< size; i++) {
+                for (int i = 0; i < size; i++) {
                     Expression keyExp = (Expression) keys.get(i);
                     Expression valExp = (Expression) values.get(i);
                     String key = keyExp.evalAndCoerceToString(env);
@@ -163,17 +168,26 @@ final class HashLiteral extends Expression {
         public boolean isEmpty() {
             return size == 0;
         }
+        
+        @Override
+        public String toString() {
+            return getCanonicalForm();
+        }
+        
     }
 
+    @Override
     int getParameterCount() {
         return size * 2;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         checkIndex(idx);
         return idx % 2 == 0 ? keys.get(idx / 2) : values.get(idx / 2);
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         checkIndex(idx);
         return idx % 2 == 0 ? ParameterRole.ITEM_KEY : ParameterRole.ITEM_VALUE;

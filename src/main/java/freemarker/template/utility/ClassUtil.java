@@ -21,6 +21,7 @@ import java.util.Set;
 
 import freemarker.core.Environment;
 import freemarker.core.Macro;
+import freemarker.core.TemplateMarkupOutputModel;
 import freemarker.ext.beans.BeanModel;
 import freemarker.ext.beans.BooleanModel;
 import freemarker.ext.beans.CollectionModel;
@@ -36,6 +37,7 @@ import freemarker.ext.util.WrapperTemplateModel;
 import freemarker.template.AdapterTemplateModel;
 import freemarker.template.TemplateBooleanModel;
 import freemarker.template.TemplateCollectionModel;
+import freemarker.template.TemplateCollectionModelEx;
 import freemarker.template.TemplateDateModel;
 import freemarker.template.TemplateDirectiveModel;
 import freemarker.template.TemplateHashModel;
@@ -52,10 +54,8 @@ import freemarker.template.TemplateTransformModel;
 
 /**
  */
-public class ClassUtil
-{
-    private ClassUtil()
-    {
+public class ClassUtil {
+    private ClassUtil() {
     }
     
     /**
@@ -65,22 +65,15 @@ public class ClassUtil
      * fall back to the class loader that loads the FreeMarker classes.
      */
     public static Class forName(String className)
-    throws
-        ClassNotFoundException
-    {
-        try
-        {
+    throws ClassNotFoundException {
+        try {
             ClassLoader ctcl = Thread.currentThread().getContextClassLoader();
             if (ctcl != null) {  // not null: we don't want to fall back to the bootstrap class loader
                 return Class.forName(className, true, ctcl);
             }
-        }
-        catch(ClassNotFoundException e)
-        {
+        } catch (ClassNotFoundException e) {
             ;// Intentionally ignored
-        }
-        catch(SecurityException e)
-        {
+        } catch (SecurityException e) {
             ;// Intentionally ignored
         }
         // Fall back to the defining class loader of the FreeMarker classes 
@@ -176,8 +169,6 @@ public class ClassUtil
                 return TemplateBooleanModel.class;
             } else if (tm instanceof DateModel) {
                 return TemplateDateModel.class;
-            } else if (tm instanceof SimpleMethodModel || tm instanceof OverloadedMethodsModel) {
-                return TemplateMethodModelEx.class;
             } else if (tm instanceof StringModel) {
                 Object wrapped = ((BeanModel) tm).getWrappedObject();
                 return wrapped instanceof String
@@ -186,12 +177,16 @@ public class ClassUtil
             } else {
                 return null;
             }
+        } else if (tm instanceof SimpleMethodModel || tm instanceof OverloadedMethodsModel) {
+            return TemplateMethodModelEx.class;
         } else {
             return null;
         }
     }
 
-    private static void appendTemplateModelTypeName(StringBuffer sb, Set typeNamesAppended, Class cl) {
+    private static void appendTemplateModelTypeName(StringBuilder sb, Set typeNamesAppended, Class cl) {
+        int initalLength = sb.length();
+        
         if (TemplateNodeModel.class.isAssignableFrom(cl)) {
             appendTypeName(sb, typeNamesAppended, "node");
         }
@@ -205,7 +200,8 @@ public class ClassUtil
         if (TemplateSequenceModel.class.isAssignableFrom(cl)) {
             appendTypeName(sb, typeNamesAppended, "sequence");
         } else if (TemplateCollectionModel.class.isAssignableFrom(cl)) {
-            appendTypeName(sb, typeNamesAppended, "collection");
+            appendTypeName(sb, typeNamesAppended,
+                    TemplateCollectionModelEx.class.isAssignableFrom(cl) ? "extended_collection" : "collection");
         } else if (TemplateModelIterator.class.isAssignableFrom(cl)) {
             appendTypeName(sb, typeNamesAppended, "iterator");
         }
@@ -213,7 +209,6 @@ public class ClassUtil
         if (TemplateMethodModel.class.isAssignableFrom(cl)) {
             appendTypeName(sb, typeNamesAppended, "method");
         }
-        
         
         if (Environment.Namespace.class.isAssignableFrom(cl)) {
             appendTypeName(sb, typeNamesAppended, "namespace");
@@ -238,6 +233,14 @@ public class ClassUtil
         if (TemplateScalarModel.class.isAssignableFrom(cl)) {
             appendTypeName(sb, typeNamesAppended, "string");
         }
+        
+        if (TemplateMarkupOutputModel.class.isAssignableFrom(cl)) {
+            appendTypeName(sb, typeNamesAppended, "markup_output");
+        }
+        
+        if (sb.length() == initalLength) {
+            appendTypeName(sb, typeNamesAppended, "misc_template_model");
+        }
     }
     
     private static Class getUnwrappedClass(TemplateModel tm) {
@@ -256,7 +259,7 @@ public class ClassUtil
         return unwrapped != null ? unwrapped.getClass() : null;
     }
 
-    private static void appendTypeName(StringBuffer sb, Set typeNamesAppended, String name) {
+    private static void appendTypeName(StringBuilder sb, Set typeNamesAppended, String name) {
         if (!typeNamesAppended.contains(name)) {
             if (sb.length() != 0) sb.append("+");
             sb.append(name);
@@ -278,7 +281,7 @@ public class ClassUtil
         } else {
             Set typeNamesAppended = new HashSet();
             
-            StringBuffer sb = new StringBuffer();
+            StringBuilder sb = new StringBuilder();
     
             Class primaryInterface = getPrimaryTemplateModelInterface(tm);
             if (primaryInterface != null) {

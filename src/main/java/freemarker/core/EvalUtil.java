@@ -33,8 +33,7 @@ import freemarker.template.TemplateSequenceModel;
 /**
  * Internally used static utilities for evaluation expressions.
  */
-class EvalUtil
-{
+class EvalUtil {
     static final int CMP_OP_EQUALS = 1;
     static final int CMP_OP_NOT_EQUALS = 2;
     static final int CMP_OP_LESS_THAN = 3;
@@ -53,7 +52,7 @@ class EvalUtil
     static String modelToString(TemplateScalarModel model, Expression expr, Environment env)
     throws TemplateModelException {
         String value = model.getAsString();
-        if(value == null) {
+        if (value == null) {
             if (env == null) env = Environment.getCurrentEnvironment();
             if (env != null && env.isClassicCompatible()) {
                 return "";
@@ -68,10 +67,9 @@ class EvalUtil
      * @param expr {@code null} is allowed, but may results in less helpful error messages
      */
     static Number modelToNumber(TemplateNumberModel model, Expression expr)
-        throws TemplateModelException
-    {
+        throws TemplateModelException {
         Number value = model.getAsNumber();
-        if(value == null) throw newModelHasStoredNullException(Number.class, model, expr);
+        if (value == null) throw newModelHasStoredNullException(Number.class, model, expr);
         return value;
     }
 
@@ -79,17 +77,17 @@ class EvalUtil
      * @param expr {@code null} is allowed, but may results in less helpful error messages
      */
     static Date modelToDate(TemplateDateModel model, Expression expr)
-        throws TemplateModelException
-    {
+        throws TemplateModelException {
         Date value = model.getAsDate();
-        if(value == null) throw newModelHasStoredNullException(Date.class, model, expr);
+        if (value == null) throw newModelHasStoredNullException(Date.class, model, expr);
         return value;
     }
     
-    /** Signals the buggy case where we have a non-null model, but its wraps a null. */
-    private static TemplateModelException newModelHasStoredNullException(
+    /** Signals the buggy case where we have a non-null model, but it wraps a null. */
+    static TemplateModelException newModelHasStoredNullException(
             Class expected, TemplateModel model, Expression expr) {
-        return new _TemplateModelException(expr, _TemplateModelException.modelHasStoredNullDescription(expected, model));
+        return new _TemplateModelException(expr,
+                _TemplateModelException.modelHasStoredNullDescription(expected, model));
     }
 
     /**
@@ -113,7 +111,7 @@ class EvalUtil
                 ltm, leftExp,
                 operator, operatorString,
                 rtm, rightExp,
-                defaultBlamed,
+                defaultBlamed, false,
                 false, false, false,
                 env);
     }
@@ -135,7 +133,7 @@ class EvalUtil
                 leftValue, null,
                 operator, null,
                 rightValue, null,
-                null,
+                null, false,
                 false, false, false,
                 env);
     }
@@ -152,7 +150,7 @@ class EvalUtil
                 leftValue, null,
                 operator, null,
                 rightValue, null,
-                null,
+                null, false,
                 true, false, false,
                 env);
     }
@@ -167,7 +165,7 @@ class EvalUtil
      * @param operator one of the {@code COMP_OP_...} constants, like {@link #CMP_OP_EQUALS}.
      * @param operatorString can be null {@code null}; the actual operator used, used for more accurate error message.
      * @param rightExp {@code null} is allowed, but may results in less helpful error messages
-     * @param defaultBlamed {@code null} allowed; the expression who to which error will point to if something goes
+     * @param defaultBlamed {@code null} allowed; the expression to which the error will point to if something goes
      *        wrong that is not specific to the left or right side expression, or if that expression is {@code null}.
      * @param typeMismatchMeansNotEqual If the two types are incompatible, they are treated as non-equal instead
      *     of throwing an exception. Comparing dates of different types will still throw an exception, however. 
@@ -180,7 +178,7 @@ class EvalUtil
             TemplateModel leftValue, Expression leftExp,
             int operator, String operatorString,
             TemplateModel rightValue, Expression rightExp,
-            Expression defaultBlamed,
+            Expression defaultBlamed, boolean quoteOperandsInErrors,
             boolean typeMismatchMeansNotEqual,
             boolean leftNullReturnsFalse, boolean rightNullReturnsFalse,
             Environment env) throws TemplateException {
@@ -252,16 +250,16 @@ class EvalUtil
                     sideExp = rightExp;
                 }
                 
-                throw new _MiscTemplateException(sideExp != null ? sideExp : defaultBlamed, env, new Object[] {
-                        "The ", sideName, " ", VALUE_OF_THE_COMPARISON_IS_UNKNOWN_DATE_LIKE });
+                throw new _MiscTemplateException(sideExp != null ? sideExp : defaultBlamed, env,
+                        "The ", sideName, " ", VALUE_OF_THE_COMPARISON_IS_UNKNOWN_DATE_LIKE);
             }
             
             if (leftDateType != rightDateType) {
                 ;
-                throw new _MiscTemplateException(defaultBlamed, env, new Object[] {
+                throw new _MiscTemplateException(defaultBlamed, env,
                         "Can't compare dates of different types. Left date type is ",
                         TemplateDateModel.TYPE_NAMES.get(leftDateType), ", right date type is ",
-                        TemplateDateModel.TYPE_NAMES.get(rightDateType), "." });
+                        TemplateDateModel.TYPE_NAMES.get(rightDateType), ".");
             }
 
             Date leftDate = EvalUtil.modelToDate(leftDateModel, leftExp);
@@ -269,8 +267,8 @@ class EvalUtil
             cmpResult = leftDate.compareTo(rightDate);
         } else if (leftValue instanceof TemplateScalarModel && rightValue instanceof TemplateScalarModel) {
             if (operator != CMP_OP_EQUALS && operator != CMP_OP_NOT_EQUALS) {
-                throw new _MiscTemplateException(defaultBlamed, env, new Object[] {
-                        "Can't use operator \"", cmpOpToString(operator, operatorString), "\" on string values." });
+                throw new _MiscTemplateException(defaultBlamed, env,
+                        "Can't use operator \"", cmpOpToString(operator, operatorString), "\" on string values.");
             }
             String leftString = EvalUtil.modelToString((TemplateScalarModel) leftValue, leftExp, env);
             String rightString = EvalUtil.modelToString((TemplateScalarModel) rightValue, rightExp, env);
@@ -278,8 +276,8 @@ class EvalUtil
             cmpResult = env.getCollator().compare(leftString, rightString);
         } else if (leftValue instanceof TemplateBooleanModel && rightValue instanceof TemplateBooleanModel) {
             if (operator != CMP_OP_EQUALS && operator != CMP_OP_NOT_EQUALS) {
-                throw new _MiscTemplateException(defaultBlamed, env, new Object[] {
-                        "Can't use operator \"", cmpOpToString(operator, operatorString), "\" on boolean values." });
+                throw new _MiscTemplateException(defaultBlamed, env,
+                        "Can't use operator \"", cmpOpToString(operator, operatorString), "\" on boolean values.");
             }
             boolean leftBool = ((TemplateBooleanModel) leftValue).getAsBoolean();
             boolean rightBool = ((TemplateBooleanModel) rightValue).getAsBoolean();
@@ -297,11 +295,20 @@ class EvalUtil
                 }
                 // Falls through
             }
-            throw new _MiscTemplateException(defaultBlamed, env, new Object[] {
-                            "Can't compare values of these types. ",
-                            "Allowed comparisons are between two numbers, two strings, two dates, or two booleans.\n",
-                            "Left hand operand is ", new _DelayedAOrAn(new _DelayedFTLTypeDescription(leftValue)), ".\n",
-                            "Right hand operand is ", new _DelayedAOrAn(new _DelayedFTLTypeDescription(rightValue)), "." });
+            throw new _MiscTemplateException(defaultBlamed, env,
+                    "Can't compare values of these types. ",
+                    "Allowed comparisons are between two numbers, two strings, two dates, or two booleans.\n",
+                    "Left hand operand ",
+                    (quoteOperandsInErrors && leftExp != null
+                            ? new Object[] { "(", new _DelayedGetCanonicalForm(leftExp), ") value " }
+                            : (Object) ""),
+                    "is ", new _DelayedAOrAn(new _DelayedFTLTypeDescription(leftValue)), ".\n",
+                    "Right hand operand ",
+                    (quoteOperandsInErrors && rightExp != null
+                            ? new Object[] { "(", new _DelayedGetCanonicalForm(rightExp), ") value " }
+                            : (Object) ""),
+                    "is ", new _DelayedAOrAn(new _DelayedFTLTypeDescription(rightValue)),
+                    ".");
         }
 
         switch (operator) {
@@ -332,13 +339,25 @@ class EvalUtil
     }
 
     static String coerceModelToString(TemplateModel tm, Expression exp, String seqHint, Environment env) throws TemplateException {
+        return coerceModelToString(tm, exp, seqHint, false, env);
+    }
+    
+    /**
+     * @param allowTOM
+     *            Instead of throwing exception, return {@code null} for a {@link TemplateMarkupOutputModel}.
+     */
+    static String coerceModelToString(TemplateModel tm, Expression exp, String seqHint,
+            boolean allowTOM,
+            Environment env) throws TemplateException {
         if (tm instanceof TemplateNumberModel) {
-            return env.formatNumber(modelToNumber((TemplateNumberModel) tm, exp));
+            return env.formatNumber((TemplateNumberModel) tm, exp);
         } else if (tm instanceof TemplateDateModel) {
             return env.formatDate((TemplateDateModel) tm, exp);
+        } else if (allowTOM && tm instanceof TemplateMarkupOutputModel) {
+            return null;
         } else if (tm instanceof TemplateScalarModel) {
             return modelToString((TemplateScalarModel) tm, exp, env);
-        } else if(tm == null) {
+        } else if (tm == null) {
             if (env.isClassicCompatible()) {
                 return "";
             } else {
@@ -375,12 +394,30 @@ class EvalUtil
         } else {
             if (env.isClassicCompatible() && tm instanceof BeanModel) {
                 return _BeansAPI.getAsClassicCompatibleString((BeanModel) tm);
-            } if (seqHint != null && (tm instanceof TemplateSequenceModel || tm instanceof TemplateCollectionModel)) {
-                throw new NonStringException(exp, tm, seqHint, env);
+            }
+            if (seqHint != null && (tm instanceof TemplateSequenceModel || tm instanceof TemplateCollectionModel)) {
+                if (allowTOM) {
+                    throw new NonStringOrTemplateOutputException(exp, tm, seqHint, env);
+                } else {
+                    throw new NonStringException(exp, tm, seqHint, env);
+                }
             } else {
-                throw new NonStringException(exp, tm, env);
+                if (allowTOM) {
+                    throw new NonStringOrTemplateOutputException(exp, tm, env);
+                } else {
+                    throw new NonStringException(exp, tm, env);
+                }
             }
         }
+    }
+    
+    /**
+     * Returns an {@link ArithmeticEngine} even if {@code env} is {@code null}, because we are in parsing phase.
+     */
+    public static ArithmeticEngine getArithmeticEngine(Environment env, TemplateObject tObj) {
+        return env != null
+                ? env.getArithmeticEngine()
+                : tObj.getTemplate().getParserConfiguration().getArithmeticEngine();
     }
     
 }

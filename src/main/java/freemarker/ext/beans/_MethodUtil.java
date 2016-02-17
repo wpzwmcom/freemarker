@@ -29,19 +29,18 @@ import freemarker.core._DelayedJQuote;
 import freemarker.core._TemplateModelException;
 import freemarker.template.TemplateModelException;
 import freemarker.template.utility.ClassUtil;
-import freemarker.template.utility.UndeclaredThrowableException;
 
 /**
  * For internal use only; don't depend on this, there's no backward compatibility guarantee at all!
  * This class is to work around the lack of module system in Java, i.e., so that other FreeMarker packages can
  * access things inside this package that users shouldn't. 
  */ 
-public class _MethodUtil {
+public final class _MethodUtil {
     
-    // Get rid of these on Java 5
-    private static final Method METHOD_IS_VARARGS = getIsVarArgsMethod(Method.class);
-    private static final Method CONSTRUCTOR_IS_VARARGS = getIsVarArgsMethod(Constructor.class);
-    
+    private _MethodUtil() {
+        // Not meant to be instantiated
+    }
+
     /**
      * Determines whether the type given as the 1st argument is convertible to the type given as the 2nd argument
      * for method call argument conversion. This follows the rules of the Java reflection-based method call, except
@@ -66,7 +65,7 @@ public class _MethodUtil {
     public static int isMoreOrSameSpecificParameterType(final Class specific, final Class generic, boolean bugfixed,
             int ifHigherThan) {
         if (ifHigherThan >= 4) return 0;
-        if(generic.isAssignableFrom(specific)) {
+        if (generic.isAssignableFrom(specific)) {
             // Identity or widening reference conversion:
             return generic == specific ? 1 : 4;
         } else {
@@ -110,7 +109,7 @@ public class _MethodUtil {
     }
 
     private static boolean isWideningPrimitiveNumberConversion(final Class source, final Class target) {
-        if(target == Short.TYPE && (source == Byte.TYPE)) {
+        if (target == Short.TYPE && (source == Byte.TYPE)) {
             return true;
         } else if (target == Integer.TYPE && 
            (source == Short.TYPE || source == Byte.TYPE)) {
@@ -134,7 +133,7 @@ public class _MethodUtil {
     }
 
     private static boolean isWideningBoxedNumberConversion(final Class source, final Class target) {
-        if(target == Short.class && source == Byte.class) {
+        if (target == Short.class && source == Byte.class) {
             return true;
         } else if (target == Integer.class && 
            (source == Short.class || source == Byte.class)) {
@@ -167,58 +166,37 @@ public class _MethodUtil {
     }
     
     private static void collectAssignables(Class c1, Class c2, Set s) {
-        if(c1.isAssignableFrom(c2)) {
+        if (c1.isAssignableFrom(c2)) {
             s.add(c1);
         }
         Class sc = c1.getSuperclass();
-        if(sc != null) {
+        if (sc != null) {
             collectAssignables(sc, c2, s);
         }
         Class[] itf = c1.getInterfaces();
-        for(int i = 0; i < itf.length; ++i) {
+        for (int i = 0; i < itf.length; ++i) {
             collectAssignables(itf[i], c2, s);
         }
     }
 
     public static Class[] getParameterTypes(Member member) {
-        if(member instanceof Method) {
-            return ((Method)member).getParameterTypes();
+        if (member instanceof Method) {
+            return ((Method) member).getParameterTypes();
         }
-        if(member instanceof Constructor) {
-            return ((Constructor)member).getParameterTypes();
+        if (member instanceof Constructor) {
+            return ((Constructor) member).getParameterTypes();
         }
         throw new IllegalArgumentException("\"member\" must be Method or Constructor");
     }
 
     public static boolean isVarargs(Member member) {
-        if(member instanceof Method) { 
-            return isVarargs(member, METHOD_IS_VARARGS);
+        if (member instanceof Method) { 
+            return ((Method) member).isVarArgs();
         }
-        if(member instanceof Constructor) {
-            return isVarargs(member, CONSTRUCTOR_IS_VARARGS);
+        if (member instanceof Constructor) {
+            return ((Constructor) member).isVarArgs();
         }
         throw new BugException();
-    }
-
-    private static boolean isVarargs(Member member, Method isVarArgsMethod) {
-        if(isVarArgsMethod == null) {
-            return false;
-        }
-        try {
-            return ((Boolean)isVarArgsMethod.invoke(member, (Object[]) null)).booleanValue();
-        }
-        catch(Exception e) {
-            throw new UndeclaredThrowableException(e);
-        }
-    }
-
-    private static Method getIsVarArgsMethod(Class memberClass) {
-        try {
-            return memberClass.getMethod("isVarArgs", (Class[]) null);
-        }
-        catch(NoSuchMethodException e) {
-            return null; // pre 1.5 JRE
-        }
     }
 
     /**
@@ -229,7 +207,7 @@ public class _MethodUtil {
             throw new IllegalArgumentException("\"member\" must be a Method or Constructor");
         }
         
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         
         if ((member.getModifiers() & Modifier.STATIC) != 0) {
             sb.append("static ");
@@ -280,6 +258,7 @@ public class _MethodUtil {
         return newInvocationTemplateModelException(
                 object,
                 new _DelayedConversionToString(callableMemberDescriptor) {
+                    @Override
                     protected String doConversion(Object callableMemberDescriptor) {
                         return ((CallableMemberDescriptor) callableMemberDescriptor).getDeclaration();
                     }
@@ -300,14 +279,13 @@ public class _MethodUtil {
             }
         }
 
-        return new _TemplateModelException(e, new Object[] {
+        return new _TemplateModelException(e,
                 invocationErrorMessageStart(member, isConstructor),
                 " threw an exception",
                 isStatic || isConstructor ? (Object) "" : new Object[] {
                     " when invoked on ", parentObject.getClass(), " object ", new _DelayedJQuote(parentObject) 
                 },
-                "; see cause exception in the Java stack trace."
-        });
+                "; see cause exception in the Java stack trace.");
     }
-    
+
 }

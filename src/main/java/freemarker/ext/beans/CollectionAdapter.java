@@ -17,6 +17,7 @@
 package freemarker.ext.beans;
 
 import java.util.AbstractCollection;
+import java.util.Collection;
 import java.util.Iterator;
 
 import freemarker.template.TemplateCollectionModel;
@@ -27,6 +28,7 @@ import freemarker.template.TemplateModelIterator;
 import freemarker.template.utility.UndeclaredThrowableException;
 
 /**
+ * Adapts a {@link TemplateCollectionModel} to  {@link Collection}.
  */
 class CollectionAdapter extends AbstractCollection implements TemplateModelAdapter {
     private final BeansWrapper wrapper;
@@ -41,10 +43,12 @@ class CollectionAdapter extends AbstractCollection implements TemplateModelAdapt
         return model;
     }
     
+    @Override
     public int size() {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public Iterator iterator() {
         try {
             return new Iterator() {
@@ -53,8 +57,7 @@ class CollectionAdapter extends AbstractCollection implements TemplateModelAdapt
                 public boolean hasNext() {
                     try {
                         return i.hasNext();
-                    }
-                    catch(TemplateModelException e) {
+                    } catch (TemplateModelException e) {
                         throw new UndeclaredThrowableException(e);
                     }
                 }
@@ -62,8 +65,7 @@ class CollectionAdapter extends AbstractCollection implements TemplateModelAdapt
                 public Object next() {
                     try {
                         return wrapper.unwrap(i.next());
-                    }
-                    catch(TemplateModelException e) {
+                    } catch (TemplateModelException e) {
                         throw new UndeclaredThrowableException(e);
                     }
                 }
@@ -72,8 +74,7 @@ class CollectionAdapter extends AbstractCollection implements TemplateModelAdapt
                     throw new UnsupportedOperationException();
                 }
             };
-        }
-        catch(TemplateModelException e) {
+        } catch (TemplateModelException e) {
             throw new UndeclaredThrowableException(e);
         }
     }

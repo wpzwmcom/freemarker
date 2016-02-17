@@ -46,51 +46,52 @@ public class HashAdapter extends AbstractMap implements TemplateModelAdapter {
         return model;
     }
     
+    @Override
     public boolean isEmpty() {
         try {
             return model.isEmpty();
-        }
-        catch(TemplateModelException e) {
+        } catch (TemplateModelException e) {
             throw new UndeclaredThrowableException(e);
         }
     }
     
+    @Override
     public Object get(Object key) {
         try {
             return wrapper.unwrap(model.get(String.valueOf(key)));
-        }
-        catch(TemplateModelException e) {
+        } catch (TemplateModelException e) {
             throw new UndeclaredThrowableException(e);
         }
     }
 
+    @Override
     public boolean containsKey(Object key) {
         // A quick check that doesn't require TemplateHashModelEx 
-        if(get(key) != null) {
+        if (get(key) != null) {
             return true;
         }
         return super.containsKey(key);
     }
     
+    @Override
     public Set entrySet() {
-        if(entrySet != null) {
+        if (entrySet != null) {
             return entrySet;
         }
         return entrySet = new AbstractSet() {
+            @Override
             public Iterator iterator() {
                 final TemplateModelIterator i;
                 try {
                      i = getModelEx().keys().iterator();
-                }
-                catch(TemplateModelException e) {
+                } catch (TemplateModelException e) {
                     throw new UndeclaredThrowableException(e);
                 }
                 return new Iterator() {
                     public boolean hasNext() {
                         try {
                             return i.hasNext();
-                        }
-                        catch(TemplateModelException e) {
+                        } catch (TemplateModelException e) {
                             throw new UndeclaredThrowableException(e);
                         }
                     }
@@ -99,8 +100,7 @@ public class HashAdapter extends AbstractMap implements TemplateModelAdapter {
                         final Object key;
                         try {
                             key = wrapper.unwrap(i.next());
-                        }
-                        catch(TemplateModelException e) {
+                        } catch (TemplateModelException e) {
                             throw new UndeclaredThrowableException(e);
                         }
                         return new Map.Entry() {
@@ -116,10 +116,11 @@ public class HashAdapter extends AbstractMap implements TemplateModelAdapter {
                                 throw new UnsupportedOperationException();
                             }
                             
+                            @Override
                             public boolean equals(Object o) {
                                 if (!(o instanceof Map.Entry))
                                     return false;
-                                Map.Entry e = (Map.Entry)o;
+                                Map.Entry e = (Map.Entry) o;
                                 Object k1 = getKey();
                                 Object k2 = e.getKey();
                                 if (k1 == k2 || (k1 != null && k1.equals(k2))) {
@@ -131,10 +132,11 @@ public class HashAdapter extends AbstractMap implements TemplateModelAdapter {
                                 return false;
                             }
                         
+                            @Override
                             public int hashCode() {
                                 Object value = getValue();
-                                return (key==null ? 0 : key.hashCode()) ^
-                                       (value==null ? 0 : value.hashCode());
+                                return (key == null ? 0 : key.hashCode()) ^
+                                       (value == null ? 0 : value.hashCode());
                             }
                         };
                     }
@@ -145,11 +147,11 @@ public class HashAdapter extends AbstractMap implements TemplateModelAdapter {
                 };
             }
             
+            @Override
             public int size() {
                 try {
                     return getModelEx().size();
-                }
-                catch(TemplateModelException e) {
+                } catch (TemplateModelException e) {
                     throw new UndeclaredThrowableException(e);
                 }
             }
@@ -157,8 +159,8 @@ public class HashAdapter extends AbstractMap implements TemplateModelAdapter {
     }
     
     private TemplateHashModelEx getModelEx() {
-        if(model instanceof TemplateHashModelEx) {
-            return ((TemplateHashModelEx)model);
+        if (model instanceof TemplateHashModelEx) {
+            return ((TemplateHashModelEx) model);
         }
         throw new UnsupportedOperationException(
                 "Operation supported only on TemplateHashModelEx. " + 

@@ -36,7 +36,7 @@ class MessageUtil {
     static final String UNKNOWN_DATE_TYPE_ERROR_TIP = 
             "Use ?date, ?time, or ?datetime to tell FreeMarker the exact type.";
     
-    static final String[] UNKNOWN_DATE_TO_STRING_TIPS = new String[] {
+    static final Object[] UNKNOWN_DATE_TO_STRING_TIPS = {
             UNKNOWN_DATE_TYPE_ERROR_TIP,
             "If you need a particular format only once, use ?string(pattern), like ?string('dd.MM.yyyy HH:mm:ss'), "
             + "to specify which fields to display. "
@@ -53,16 +53,16 @@ class MessageUtil {
         return formatLocation("in", template, line, column);
     }
 
-    static String formatLocationForSimpleParsingError(String templateName, int line, int column) {
-        return formatLocation("in", templateName, line, column);
+    static String formatLocationForSimpleParsingError(String templateSourceName, int line, int column) {
+        return formatLocation("in", templateSourceName, line, column);
     }
 
     static String formatLocationForDependentParsingError(Template template, int line, int column) {
         return formatLocation("on", template, line, column);
     }
 
-    static String formatLocationForDependentParsingError(String templateName, int line, int column) {
-        return formatLocation("on", templateName, line, column);
+    static String formatLocationForDependentParsingError(String templateSourceName, int line, int column) {
+        return formatLocation("on", templateSourceName, line, column);
     }
 
     static String formatLocationForEvaluationError(Template template, int line, int column) {
@@ -71,36 +71,35 @@ class MessageUtil {
 
     static String formatLocationForEvaluationError(Macro macro, int line, int column) {
         Template t = macro.getTemplate();
-        return formatLocation("at", t != null ? t.getName() : null, macro.getName(), macro.isFunction(), line, column);
+        return formatLocation("at", t != null ? t.getSourceName() : null, macro.getName(), macro.isFunction(), line, column);
     }
     
-    static String formatLocationForEvaluationError(String templateName, int line, int column) {
-        return formatLocation("at", templateName, line, column);
+    static String formatLocationForEvaluationError(String templateSourceName, int line, int column) {
+        return formatLocation("at", templateSourceName, line, column);
     }
 
     private static String formatLocation(String preposition, Template template, int line, int column) {
-        return formatLocation(preposition, template != null ? template.getName() : null, line, column);
+        return formatLocation(preposition, template != null ? template.getSourceName() : null, line, column);
     }
     
-    private static String formatLocation(String preposition, String templateName, int line, int column) {
+    private static String formatLocation(String preposition, String templateSourceName, int line, int column) {
         return formatLocation(
-                preposition, templateName,
+                preposition, templateSourceName,
                 null, false,
                 line, column);
     }
 
     private static String formatLocation(
-            String preposition, String templateName,
+            String preposition, String templateSourceName,
             String macroOrFuncName, boolean isFunction,
             int line, int column) {
         String templateDesc;
         if (line < 0) {
             templateDesc = "?eval-ed string";
-            line -= TemplateObject.RUNTIME_EVAL_LINE_DISPLACEMENT - 1;
             macroOrFuncName = null;
         } else { 
-            templateDesc = templateName != null
-                ? "template " + StringUtil.jQuoteNoXSS(templateName)
+            templateDesc = templateSourceName != null
+                ? "template " + StringUtil.jQuoteNoXSS(templateSourceName)
                 : "nameless template";
         }
         return "in " + templateDesc
@@ -108,7 +107,12 @@ class MessageUtil {
                       ? " in " + (isFunction ? "function " : "macro ") + StringUtil.jQuote(macroOrFuncName)
                       : "")
               + " "
-              + preposition + " line " + line + ", column " + column;
+              + preposition + " " + formatPosition(line, column);
+    }
+    
+    static String formatPosition(int line, int column) {
+        return "line " + (line >= 0 ? line : line - (TemplateObject.RUNTIME_EVAL_LINE_DISPLACEMENT - 1))
+                + ", column " + column;
     }
 
     /**
@@ -156,7 +160,7 @@ class MessageUtil {
         }
     }
     
-    static StringBuffer appendExpressionAsUntearable(StringBuffer sb, Expression argExp) {
+    static StringBuilder appendExpressionAsUntearable(StringBuilder sb, Expression argExp) {
         boolean needParen =
                 !(argExp instanceof NumberLiteral)
                 && !(argExp instanceof StringLiteral)
@@ -191,17 +195,17 @@ class MessageUtil {
             if (maxCnt == 0) {
                 desc.add("no");
             } else {
-                desc.add(new Integer(maxCnt));
+                desc.add(Integer.valueOf(maxCnt));
             }
         } else if (maxCnt - minCnt == 1) {
-            desc.add(new Integer(minCnt));
+            desc.add(Integer.valueOf(minCnt));
             desc.add(" or ");
-            desc.add(new Integer(maxCnt));
+            desc.add(Integer.valueOf(maxCnt));
         } else {
-            desc.add(new Integer(minCnt));
+            desc.add(Integer.valueOf(minCnt));
             if (maxCnt != Integer.MAX_VALUE) {
                 desc.add(" to ");
-                desc.add(new Integer(maxCnt));
+                desc.add(Integer.valueOf(maxCnt));
             } else {
                 desc.add(" or more (unlimited)");
             }
@@ -213,7 +217,7 @@ class MessageUtil {
         if (argCnt == 0) {
             desc.add("none");
         } else {
-            desc.add(new Integer(argCnt));
+            desc.add(Integer.valueOf(argCnt));
         }
         desc.add(".");
         
@@ -249,33 +253,32 @@ class MessageUtil {
     
     static TemplateModelException newMethodArgUnexpectedTypeException(
             String methodName, int argIdx, String expectedType, TemplateModel arg) {
-        return new _TemplateModelException(new Object[] {
-                methodName, "(...) expects ", new _DelayedAOrAn(expectedType), " as argument #", new Integer(argIdx + 1),
-                ", but received ", new _DelayedAOrAn(new _DelayedFTLTypeDescription(arg)), "." });
+        return new _TemplateModelException(
+                methodName, "(...) expects ", new _DelayedAOrAn(expectedType), " as argument #", Integer.valueOf(argIdx + 1),
+                ", but received ", new _DelayedAOrAn(new _DelayedFTLTypeDescription(arg)), ".");
     }
     
     /**
      * The type of the argument was good, but it's value wasn't.
      */
     static TemplateModelException newMethodArgInvalidValueException(
-            String methodName, int argIdx, Object[] details) {
-        return new _TemplateModelException(new Object[] {
-                methodName, "(...) argument #", new Integer(argIdx + 1),
-                " had invalid value: ", details });
+            String methodName, int argIdx, Object... details) {
+        return new _TemplateModelException(
+                methodName, "(...) argument #", Integer.valueOf(argIdx + 1),
+                " had invalid value: ", details);
     }
 
     /**
      * The type of the argument was good, but the values of two or more arguments are inconsistent with each other.
      */
     static TemplateModelException newMethodArgsInvalidValueException(
-            String methodName, Object[] details) {
-        return new _TemplateModelException(new Object[] {
-                methodName, "(...) arguments have invalid value: ", details });
+            String methodName, Object... details) {
+        return new _TemplateModelException(methodName, "(...) arguments have invalid value: ", details);
     }
     
     static TemplateException newInstantiatingClassNotAllowedException(String className, Environment env) {
-        return new _MiscTemplateException(env, new Object[] {
-                "Instantiating ", className, " is not allowed in the template for security reasons." });
+        return new _MiscTemplateException(env,
+                "Instantiating ", className, " is not allowed in the template for security reasons.");
     }
     
     static _TemplateModelException newCantFormatUnknownTypeDateException(

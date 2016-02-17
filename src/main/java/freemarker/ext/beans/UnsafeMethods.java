@@ -39,46 +39,35 @@ class UnsafeMethods {
         return UNSAFE_METHODS.contains(method);        
     }
     
-    private static final Set createUnsafeMethodsSet()
-    {
+    private static final Set createUnsafeMethodsSet() {
         Properties props = new Properties();
         InputStream in = BeansWrapper.class.getResourceAsStream("unsafeMethods.txt");
-        if(in != null)
-        {
+        if (in != null) {
             String methodSpec = null;
-            try
-            {
-                try
-                {
+            try {
+                try {
                     props.load(in);
-                }
-                finally
-                {
+                } finally {
                     in.close();
                 }
-                Set set = new HashSet(props.size() * 4/3, .75f);
+                Set set = new HashSet(props.size() * 4 / 3, 1f);
                 Map primClasses = createPrimitiveClassesMap();
-                for (Iterator iterator = props.keySet().iterator(); iterator.hasNext();)
-                {
+                for (Iterator iterator = props.keySet().iterator(); iterator.hasNext(); ) {
                     methodSpec = (String) iterator.next();
                     try {
                         set.add(parseMethodSpec(methodSpec, primClasses));
-                    }
-                    catch(ClassNotFoundException e) {
-                        if(ClassIntrospector.DEVELOPMENT_MODE) {
+                    } catch (ClassNotFoundException e) {
+                        if (ClassIntrospector.DEVELOPMENT_MODE) {
                             throw e;
                         }
-                    }
-                    catch(NoSuchMethodException e) {
-                        if(ClassIntrospector.DEVELOPMENT_MODE) {
+                    } catch (NoSuchMethodException e) {
+                        if (ClassIntrospector.DEVELOPMENT_MODE) {
                             throw e;
                         }
                     }
                 }
                 return set;
-            }
-            catch(Exception e)
-            {
+            } catch (Exception e) {
                 throw new RuntimeException("Could not load unsafe method " + methodSpec + " " + e.getClass().getName() + " " + e.getMessage());
             }
         }
@@ -86,10 +75,8 @@ class UnsafeMethods {
     }
 
     private static Method parseMethodSpec(String methodSpec, Map primClasses)
-    throws
-        ClassNotFoundException,
-        NoSuchMethodException
-    {
+    throws ClassNotFoundException,
+        NoSuchMethodException {
         int brace = methodSpec.indexOf('(');
         int dot = methodSpec.lastIndexOf('.', brace);
         Class clazz = ClassUtil.forName(methodSpec.substring(0, dot));
@@ -98,20 +85,17 @@ class UnsafeMethods {
         StringTokenizer tok = new StringTokenizer(argSpec, ",");
         int argcount = tok.countTokens();
         Class[] argTypes = new Class[argcount];
-        for (int i = 0; i < argcount; i++)
-        {
+        for (int i = 0; i < argcount; i++) {
             String argClassName = tok.nextToken();
-            argTypes[i] = (Class)primClasses.get(argClassName);
-            if(argTypes[i] == null)
-            {
+            argTypes[i] = (Class) primClasses.get(argClassName);
+            if (argTypes[i] == null) {
                 argTypes[i] = ClassUtil.forName(argClassName);
             }
         }
         return clazz.getMethod(methodName, argTypes);
     }
 
-    private static Map createPrimitiveClassesMap()
-    {
+    private static Map createPrimitiveClassesMap() {
         Map map = new HashMap();
         map.put("boolean", Boolean.TYPE);
         map.put("byte", Byte.TYPE);

@@ -27,14 +27,12 @@ import freemarker.template.TemplateScalarModel;
  * interface.
  */
 public class StringModel extends BeanModel
-implements TemplateScalarModel
-{
+implements TemplateScalarModel {
     static final ModelFactory FACTORY =
         new ModelFactory()
         {
-            public TemplateModel create(Object object, ObjectWrapper wrapper)
-            {
-                return new StringModel(object, (BeansWrapper)wrapper);
+            public TemplateModel create(Object object, ObjectWrapper wrapper) {
+                return new StringModel(object, (BeansWrapper) wrapper);
             }
         };
 
@@ -47,8 +45,7 @@ implements TemplateScalarModel
      * model gains many attributes from its wrapper, including the caching 
      * behavior, method exposure level, method-over-item shadowing policy etc.
      */
-    public StringModel(Object object, BeansWrapper wrapper)
-    {
+    public StringModel(Object object, BeansWrapper wrapper) {
         super(object, wrapper);
     }
 
@@ -56,8 +53,7 @@ implements TemplateScalarModel
      * Returns the result of calling {@link Object#toString()} on the wrapped
      * object.
      */
-    public String getAsString()
-    {
+    public String getAsString() {
         return object.toString();
     }
 }

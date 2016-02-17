@@ -35,23 +35,24 @@ final class ConditionalBlock extends TemplateElement {
     private final int type;
     boolean isLonelyIf;
 
-    ConditionalBlock(Expression condition, TemplateElement nestedBlock, int type)
-    {
+    ConditionalBlock(Expression condition, TemplateElement nestedBlock, int type) {
         this.condition = condition;
-        this.nestedBlock = nestedBlock;
+        setNestedBlock(nestedBlock);
         this.type = type;
     }
 
+    @Override
     void accept(Environment env) throws TemplateException, IOException {
         if (condition == null || condition.evalToBoolean(env)) {
-            if (nestedBlock != null) {
-                env.visitByHiddingParent(nestedBlock);
+            if (getNestedBlock() != null) {
+                env.visitByHiddingParent(getNestedBlock());
             }
         }
     }
     
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         if (canonical) buf.append('<');
         buf.append(getNodeTypeSymbol());
         if (condition != null) {
@@ -60,8 +61,8 @@ final class ConditionalBlock extends TemplateElement {
         }
         if (canonical) {
             buf.append(">");
-            if (nestedBlock != null) {
-                buf.append(nestedBlock.getCanonicalForm());
+            if (getNestedBlock() != null) {
+                buf.append(getNestedBlock().getCanonicalForm());
             }
             if (isLonelyIf) {
                 buf.append("</#if>");
@@ -70,6 +71,7 @@ final class ConditionalBlock extends TemplateElement {
         return buf.toString();
     }
     
+    @Override
     String getNodeTypeSymbol() {
         if (type == TYPE_ELSE) {
             return "#else";
@@ -82,24 +84,32 @@ final class ConditionalBlock extends TemplateElement {
         }
     }
     
+    @Override
     int getParameterCount() {
         return 2;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         switch (idx) {
         case 0: return condition;
-        case 1: return new Integer(type);
+        case 1: return Integer.valueOf(type);
         default: throw new IndexOutOfBoundsException();
         }
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         switch (idx) {
         case 0: return ParameterRole.CONDITION;
         case 1: return ParameterRole.AST_NODE_SUBTYPE;
         default: throw new IndexOutOfBoundsException();
         }
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
     }
     
 }

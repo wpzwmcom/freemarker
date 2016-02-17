@@ -24,6 +24,7 @@ import java.io.Reader;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.io.Writer;
+import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -32,33 +33,44 @@ import java.util.List;
 import java.util.Map;
 import java.util.Vector;
 
+import freemarker.cache.TemplateCache;
 import freemarker.cache.TemplateLoader;
+import freemarker.cache.TemplateLookupStrategy;
+import freemarker.core.BugException;
 import freemarker.core.Configurable;
 import freemarker.core.Environment;
 import freemarker.core.FMParser;
 import freemarker.core.LibraryLoad;
 import freemarker.core.Macro;
+import freemarker.core.OutputFormat;
 import freemarker.core.ParseException;
+import freemarker.core.ParserConfiguration;
+import freemarker.core.TemplateConfigurer;
 import freemarker.core.TemplateElement;
 import freemarker.core.TextBlock;
 import freemarker.core.TokenMgrError;
+import freemarker.core._CoreAPI;
 import freemarker.debug.impl.DebuggerService;
 
 /**
- * <p>Stores an already parsed template, ready to be processed (rendered) for unlimited times, possibly from
- * multiple threads.
+ * <p>
+ * Stores an already parsed template, ready to be processed (rendered) for unlimited times, possibly from multiple
+ * threads.
  * 
- * <p>Typically, you will use {@link Configuration#getTemplate(String)} to create/get {@link Template} objects, so
- * you don't construct them directly. But you can also construct a template from a {@link Reader} or a {@link String}
- * that contains the template source code. But then it's
- * important to know that while the resulting {@link Template} is efficient for later processing, creating a new
- * {@link Template} itself is relatively expensive. So try to re-use {@link Template} objects if possible.
- * {@link Configuration#getTemplate(String)} does that (caching {@link Template}-s) for you, but the constructor of
- * course doesn't, so it's up to you to solve then.
+ * <p>
+ * Typically, you will use {@link Configuration#getTemplate(String)} to create/get {@link Template} objects, so you
+ * don't construct them directly. But you can also construct a template from a {@link Reader} or a {@link String} that
+ * contains the template source code. But then it's important to know that while the resulting {@link Template} is
+ * efficient for later processing, creating a new {@link Template} itself is relatively expensive. So try to re-use
+ * {@link Template} objects if possible. {@link Configuration#getTemplate(String)} (and its overloads) does that
+ * (caching {@link Template}-s) for you, but the constructor of course doesn't, so it's up to you to solve then.
  * 
- * <p>Objects of this class meant to be handled as immutable and thus thread-safe. However, it has some setter methods
- * for changing FreeMarker settings. Those must not be used while the template is being processed, or if the
- * template object is already accessible from multiple threads.
+ * <p>
+ * Objects of this class meant to be handled as immutable and thus thread-safe. However, it has some setter methods for
+ * changing FreeMarker settings. Those must not be used while the template is being processed, or if the template object
+ * is already accessible from multiple threads. If some templates need different settings that those coming from the
+ * shared {@link Configuration}, and you are using {@link Configuration#getTemplate(String)} (or its overloads), then
+ * see {@link Configuration#setTemplateConfigurers(freemarker.cache.TemplateConfigurerFactory)}.
  */
 public class Template extends Configurable {
     public static final String DEFAULT_NAMESPACE_PREFIX = "D";
@@ -72,9 +84,15 @@ public class Template extends Configurable {
     private List imports = new Vector();
     private TemplateElement rootElement;
     private String encoding, defaultNS;
+    private Object customLookupCondition;
     private int actualTagSyntax;
+    private int actualNamingConvention;
+    private boolean autoEscaping;
+    private OutputFormat outputFormat;
     private final String name;
+    private final String sourceName;
     private final ArrayList lines = new ArrayList();
+    private final ParserConfiguration parserConfiguration;
     private Map prefixToNamespaceURILookup = new HashMap();
     private Map namespaceURIToPrefixLookup = new HashMap();
     private Version templateLanguageVersion;
@@ -83,96 +101,178 @@ public class Template extends Configurable {
      * A prime constructor to which all other constructors should
      * delegate directly or indirectly.
      */
-    private Template(String name, Configuration cfg)
-    {
-        super(cfg != null ? cfg : Configuration.getDefaultConfiguration());
+    private Template(String name, String sourceName, Configuration cfg, ParserConfiguration customParserConfiguration) {
+        super(toNonNull(cfg));
         this.name = name;
-        this.templateLanguageVersion = normalizeTemplateLanguageVersion(cfg.getIncompatibleImprovements());
+        this.sourceName = sourceName;
+        this.templateLanguageVersion = normalizeTemplateLanguageVersion(toNonNull(cfg).getIncompatibleImprovements());
+        this.parserConfiguration = customParserConfiguration != null ? customParserConfiguration : getConfiguration();
     }
-    
+
+    private static Configuration toNonNull(Configuration cfg) {
+        return cfg != null ? cfg : Configuration.getDefaultConfiguration();
+    }
 
     /**
-     * Constructs a template from a character stream. Note that this is a relatively expensive operation; where
-     * higher performance matters, you should re-use (cache) {@link Template} instances instead of re-creating them from
-     * the same source again and again.
-     *
-     * @param name the path of the template file relatively to the (virtual) directory that you use to store
-     *        the templates. Shouldn't start with {@code '/'}. Should use {@code '/'}, not {@code '\'}.
-     *        Check {@link #getName()} to see how the name will be used. The name should be independent of the
-     *        actual storage mechanism and physical location as far as possible. Even when the templates are stored
-     *        straightforwardly in real files (they often aren't; see {@link TemplateLoader}), the name shouldn't be an
-     *        absolute file path. Like if the template is stored in {@code "/www/templates/forum/main.ftl"}, and you
-     *        are using {@code "/www/templates/"} as the template root directory via
-     *        {@link Configuration#setDirectoryForTemplateLoading(java.io.File)}, then the template name will be
-     *        {@code "forum/main.ftl"}.
-     * @param reader the character stream to read from. It will always be closed ({@link Reader#close()}).
-     * @param cfg the Configuration object that this Template is associated with.
-     *        If this is {@code null}, the "default" {@link Configuration} object is used,
-     *        which is highly discouraged, because it can easily lead to
-     *        erroneous, unpredictable behavior.
-     *        (See more {@link Configuration#getDefaultConfiguration() here...})
+     * Same as {@link #Template(String, String, Reader, Configuration)} with {@code null} {@code sourceName} parameter.
      */
     public Template(String name, Reader reader, Configuration cfg) throws IOException {
-        this(name, reader, cfg, null);
+        this(name, null, reader, cfg);
     }
-    
+
     /**
      * Convenience constructor for {@link #Template(String, Reader, Configuration)
      * Template(name, new StringReader(reader), cfg)}.
+     * 
+     * @since 2.3.20
      */
     public Template(String name, String sourceCode, Configuration cfg) throws IOException {
-        this(name, new StringReader(sourceCode), cfg, null);
+        this(name, new StringReader(sourceCode), cfg);
     }
+
+    /**
+     * Convenience constructor for {@link #Template(String, String, Reader, Configuration, String) Template(name, null,
+     * reader, cfg, encoding)}.
+     * 
+     * @deprecated In most applications, use {@link #Template(String, Reader, Configuration)} instead, which doesn't
+     *             specify the encoding.
+     */
+    @Deprecated
+    public Template(String name, Reader reader, Configuration cfg, String encoding) throws IOException {
+        this(name, null, reader, cfg, encoding);
+    }
+
+    /**
+     * Constructs a template from a character stream. Note that this is a relatively expensive operation; where higher
+     * performance matters, you should re-use (cache) {@link Template} instances instead of re-creating them from the
+     * same source again and again. ({@link Configuration#getTemplate(String) and its overloads already do such reuse.})
+     * 
+     * @param name
+     *            The path of the template file relatively to the (virtual) directory that you use to store the
+     *            templates (except if {@link #Template(String, String, Reader, Configuration, String) sourceName}
+     *            differs from it). Shouldn't start with {@code '/'}. Should use {@code '/'}, not {@code '\'}. Check
+     *            {@link #getName()} to see how the name will be used. The name should be independent of the actual
+     *            storage mechanism and physical location as far as possible. Even when the templates are stored
+     *            straightforwardly in real files (they often aren't; see {@link TemplateLoader}), the name shouldn't be
+     *            an absolute file path. Like if the template is stored in {@code "/www/templates/forum/main.ftl"}, and
+     *            you are using {@code "/www/templates/"} as the template root directory via
+     *            {@link Configuration#setDirectoryForTemplateLoading(java.io.File)}, then the template name will be
+     *            {@code "forum/main.ftl"}. The name can be {@code null} (should be used for template made on-the-fly
+     *            instead of being loaded from somewhere), in which case relative paths in it will be relative to
+     *            the template root directory (and here again, it's the {@link TemplateLoader} that knows what that
+     *            "physically" means).
+     * @param sourceName
+     *            See {@link #getSourceName()} for the meaning. Can be {@code null}, in which case
+     *            {@link #getSourceName()} will return the same as {@link #getName()}.
+     * @param reader
+     *            The character stream to read from. It will always be closed ({@link Reader#close()}) by this method.
+     * @param cfg
+     *            The Configuration object that this Template is associated with. If this is {@code null}, the "default"
+     *            {@link Configuration} object is used, which is highly discouraged, because it can easily lead to
+     *            erroneous, unpredictable behavior. (See more {@link Configuration#getDefaultConfiguration() here...})
+     * 
+     * @since 2.3.22
+     */
+   public Template(
+           String name, String sourceName, Reader reader, Configuration cfg) throws IOException {
+       this(name, sourceName, reader, cfg, null);
+   }
     
     /**
-     * Same as {@link #Template(String, Reader, Configuration)}, but also specifies the template's encoding.
+     * Same as {@link #Template(String, String, Reader, Configuration)}, but also specifies the template's encoding (not
+     * recommended).
      *
-     * @param encoding This is the encoding that we are supposed to be using. But it's not really necessary because we
-     *        have a {@link Reader} which is already decoded, but it's kept as meta-info. It also has an impact when
-     *        {@code #include}-ing/{@code #import}-ing another template from this template, as its default encoding will
-     *        be this. But this behavior of said directives is considered to be harmful, and will be probably phased
-     *        out. Until that, it's better to leave this on {@code null}, so that the encoding will come from the
-     *        {@link Configuration}. Note that if this is non-{@code null} and there's an {@code #ftl} header with
-     *        encoding, they must match, or else a {@link WrongEncodingException} is thrown. 
-     *        
-     * @deprecated Use {@link #Template(String, Reader, Configuration)} instead.
+     * @param encoding
+     *            This is the encoding that we are supposed to be using. But it's not really necessary because we have a
+     *            {@link Reader} which is already decoded, but it's kept as meta-info. It also has an impact when
+     *            {@code #include}-ing/{@code #import}-ing another template from this template, as its default encoding
+     *            will be this. But this behavior of said directives is considered to be harmful, and will be probably
+     *            phased out. Until that, it's better to leave this on {@code null}, so that the encoding will come from
+     *            the {@link Configuration}. Note that if this is non-{@code null} and there's an {@code #ftl} header
+     *            with encoding, they must match, or else a {@link WrongEncodingException} is thrown.
+     * 
+     * @deprecated In most applications, use {@link #Template(String, String, Reader, Configuration)} instead, which
+     *             doesn't specify the encoding.
+     * 
+     * @since 2.3.22
      */
-    public Template(String name, Reader reader, Configuration cfg, String encoding)
-    throws IOException
-    {
-        this(name, cfg);
-        this.encoding = encoding;
+   @Deprecated
+   public Template(
+           String name, String sourceName, Reader reader, Configuration cfg, String encoding) throws IOException {
+       this(name, sourceName, reader, cfg, null, encoding);
+   }
+   
+    /**
+     * Same as {@link #Template(String, String, Reader, Configuration, String)}, but also specifies a
+     * {@link TemplateConfigurer}. This is mostly meant to be used by FreeMarker internally, but advanced users might
+     * still find this useful.
+     * 
+     * @param customParserConfiguration
+     *            Overrides the parsing related configuration settings of the {@link Configuration} parameter; can be
+     *            {@code null}. This is useful as the {@link Configuration} is normally a singleton shared by all
+     *            templates, and so it's not good for specifying template-specific settings. (While
+     *            {@link Template} itself has methods to specify settings just for that template, those don't influence
+     *            the parsing, and you only have opportunity to call them after the parsing anyway.) This objects is
+     *            often a {@link TemplateConfigurer} whose parent is the {@link Configuration} parameter, and then it
+     *            practically just overrides some of the parser settings, as the others are inherited from the
+     *            {@link Configuration}. Note that if this is a {@link TemplateConfigurer}, you will also want to call
+     *            {@link TemplateConfigurer#configure(Template)} on the resulting {@link Template} so that
+     *            {@link Configurable} settings will be set too, because this constructor only uses it as a
+     *            {@link ParserConfiguration}.  
+     * @param encoding
+     *            Same as in {@link #Template(String, String, Reader, Configuration, String)}. When it's non-{@code
+     *            null}, it overrides the value coming from the {@code TemplateConfigurer#getEncoding()} method of the
+     *            {@code templateConfigurer} parameter.
+     * 
+     * @since 2.3.24
+     */
+    public Template(
+            String name, String sourceName, Reader reader,
+            Configuration cfg, ParserConfiguration customParserConfiguration,
+            String encoding) throws IOException {
+        this(name, sourceName, cfg, customParserConfiguration);
+        
+        this.setEncoding(encoding);
+        LineTableBuilder ltbReader;
         try {
-            if (!(reader instanceof BufferedReader)) {
+            if (!(reader instanceof BufferedReader) && !(reader instanceof StringReader)) {
                 reader = new BufferedReader(reader, 0x1000);
             }
-            reader = new LineTableBuilder(reader);
+            ltbReader = new LineTableBuilder(reader);
+            reader = ltbReader;
             
             try {
-                parser = new FMParser(this, reader,
-                        getConfiguration().getStrictSyntaxMode(),
-                        getConfiguration().getWhitespaceStripping(),
-                        getConfiguration().getTagSyntax(),
-                        getConfiguration().getIncompatibleImprovements().intValue());
-                this.rootElement = parser.Root();
+                parser = new FMParser(this, reader, getParserConfiguration());
+                try {
+                    this.rootElement = parser.Root();
+                } catch (IndexOutOfBoundsException exc) {
+                    // There's a JavaCC bug where the Reader throws a RuntimeExcepton and then JavaCC fails with
+                    // IndexOutOfBoundsException. If that wasn't the case, we just rethrow. Otherwise we suppress the
+                    // IndexOutOfBoundsException and let the real cause to be thrown later. 
+                    if (!ltbReader.hasFailure()) {
+                        throw exc;
+                    }
+                    rootElement = null;
+                }
                 this.actualTagSyntax = parser._getLastTagSyntax();
-            }
-            catch (TokenMgrError exc) {
+                this.actualNamingConvention = parser._getLastNamingConvention();
+            } catch (TokenMgrError exc) {
                 // TokenMgrError VS ParseException is not an interesting difference for the user, so we just convert it
                 // to ParseException
                 throw exc.toParseException(this);
-            }
-            finally {
+            } finally {
                 parser = null;
             }
-        }
-        catch(ParseException e) {
-            e.setTemplateName(name);
+        } catch (ParseException e) {
+            e.setTemplateName(getSourceName());
             throw e;
-        }
-        finally {
+        } finally {
             reader.close();
         }
+        
+        // Throws any exception that JavaCC has silently treated as EOF:
+        ltbReader.throwFailure();
+        
         DebuggerService.registerTemplate(this);
         namespaceURIToPrefixLookup = Collections.unmodifiableMap(namespaceURIToPrefixLookup);
         prefixToNamespaceURILookup = Collections.unmodifiableMap(prefixToNamespaceURILookup);
@@ -186,6 +286,7 @@ public class Template extends Configurable {
      * instance, which can easily lead to erroneous, unpredictable behavior.
      * See more {@link Configuration#getDefaultConfiguration() here...}.
      */
+    @Deprecated
     public Template(String name, Reader reader) throws IOException {
         this(name, reader, (Configuration) null);
     }
@@ -195,26 +296,44 @@ public class Template extends Configurable {
      * 
      * @deprecated Has problems setting actualTagSyntax and templateLanguageVersion; will be removed in 2.4.
      */
+    @Deprecated
     // [2.4] remove this
-    Template(String name, TemplateElement root, Configuration config) {
-        this(name, config);
+    Template(String name, TemplateElement root, Configuration cfg) {
+        this(name, null, cfg, (ParserConfiguration) null);
         this.rootElement = root;
         DebuggerService.registerTemplate(this);
     }
     
     /**
-     * Returns a trivial template, one that is just a single block of
-     * plain text, no dynamic content. (Used by the cache module to create
-     * unparsed templates.)
-     * @param name the path of the template file relative to the directory what you use to store
-     *        the templates. See {@link #getName} for more details.
-     * @param content the block of text that this template represents
-     * @param config the configuration to which this template belongs
+     * Same as {@link #getPlainTextTemplate(String, String, String, Configuration)} with {@code null} {@code sourceName}
+     * argument.
      */
     static public Template getPlainTextTemplate(String name, String content, Configuration config) {
-        Template template = new Template(name, config);
-        template.rootElement = new TextBlock(content);
-        template.actualTagSyntax = config.getTagSyntax();
+        return getPlainTextTemplate(name, null, content, config);
+    }
+    
+    /**
+     * Creates (not "get"-s) a {@link Template} that only contains a single block of static text, no dynamic content.
+     * 
+     * @param name
+     *            See {@link #getName} for more details.
+     * @param sourceName
+     *            See {@link #getSourceName} for more details. If {@code null}, it will be the same as the {@code name}.
+     * @param content
+     *            the block of text that this template represents
+     * @param config
+     *            the configuration to which this template belongs
+     * 
+     * @since 2.3.22
+     */
+    static public Template getPlainTextTemplate(String name, String sourceName, String content, Configuration config) {
+        Template template;
+        try {
+            template = new Template(name, sourceName, new StringReader("X"), config);
+        } catch (IOException e) {
+            throw new BugException("Plain text template creation failed", e);
+        }
+        _CoreAPI.replaceText((TextBlock) template.rootElement, content);
         DebuggerService.registerTemplate(template);
         return template;
     }
@@ -251,8 +370,7 @@ public class Template extends Configurable {
      * @throws IOException if an I/O exception occurs during writing to the writer.
      */
     public void process(Object dataModel, Writer out)
-    throws TemplateException, IOException
-    {
+    throws TemplateException, IOException {
         createProcessingEnvironment(dataModel, out, null).process();
     }
 
@@ -268,8 +386,7 @@ public class Template extends Configurable {
      * @throws IOException if an I/O exception occurs during writing to the writer.
      */
     public void process(Object dataModel, Writer out, ObjectWrapper wrapper, TemplateNodeModel rootNode)
-    throws TemplateException, IOException
-    {
+    throws TemplateException, IOException {
         Environment env = createProcessingEnvironment(dataModel, out, wrapper);
         if (rootNode != null) {
             env.setCurrentVisitorNode(rootNode);
@@ -284,8 +401,7 @@ public class Template extends Configurable {
      *      provides, or {@code null} if you don't want to override that. 
      */
     public void process(Object dataModel, Writer out, ObjectWrapper wrapper)
-    throws TemplateException, IOException
-    {
+    throws TemplateException, IOException {
         createProcessingEnvironment(dataModel, out, wrapper).process();
     }
     
@@ -341,7 +457,7 @@ public class Template extends Configurable {
         if (dataModel instanceof TemplateHashModel) {
             dataModelHash = (TemplateHashModel) dataModel;
         } else {
-            if(wrapper == null) {
+            if (wrapper == null) {
                 wrapper = getObjectWrapper();
             }
 
@@ -371,8 +487,7 @@ public class Template extends Configurable {
      * createProcessingEnvironment(dataModel, out, null)}.
      */
     public Environment createProcessingEnvironment(Object dataModel, Writer out)
-    throws TemplateException, IOException
-    {
+    throws TemplateException, IOException {
         return createProcessingEnvironment(dataModel, out, null);
     }
     
@@ -380,6 +495,7 @@ public class Template extends Configurable {
      * Returns a string representing the raw template
      * text in canonical form.
      */
+    @Override
     public String toString() {
         StringWriter sw = new StringWriter();
         try {
@@ -394,22 +510,28 @@ public class Template extends Configurable {
     /**
      * The usually path-like (or URL-like) identifier of the template, or possibly {@code null} for non-stored
      * templates. It usually looks like a relative UN*X path; it should use {@code /}, not {@code \}, and shouldn't
-     * start with {@code /} (but there are no hard guarantees). It's not a real path in a file-system, it's just
-     * a name that a {@link TemplateLoader} used to load the backing resource. Or, it can also be a name that was never
-     * used to load the template (directly created with {@link #Template(String, Reader, Configuration)}).
-     * Even if the templates are stored straightforwardly in files, this is relative to the base directory of the
-     * {@link TemplateLoader}. So it really could be anything, except that it has importance in these situations:
+     * start with {@code /} (but there are no hard guarantees). It's not a real path in a file-system, it's just a name
+     * that a {@link TemplateLoader} used to load the backing resource (in simple cases; actually that name is
+     * {@link #getSourceName()}, but see it there). Or, it can also be a name that was never used to load the template
+     * (directly created with {@link #Template(String, Reader, Configuration)}). Even if the templates are stored
+     * straightforwardly in files, this is relative to the base directory of the {@link TemplateLoader}. So it really
+     * could be anything, except that it has importance in these situations:
      * 
-     * <ul>
-     *   <li><p>Relative paths to other templates in this template will be resolved relatively to the directory part of
-     *       this. Like if the template name is {@link "foo/this.ftl"}, then {@code <#include "other.ftl">} gets
-     *       the template with name {@link "foo/other.ftl"}.
-     *   <li><p>It's shown in error messages. So it should be something based on which the user can find the template.
-     *   <li><p>Some tools, like an IDE plugin, uses this to identify (and find) templates.
-     * </ul>
+     * <p>
+     * Relative paths to other templates in this template will be resolved relatively to the directory part of this.
+     * Like if the template name is {@code "foo/this.ftl"}, then {@code <#include "other.ftl">} gets the template with
+     * name {@code "foo/other.ftl"}.
+     * </p>
      * 
-     * <p>Some frameworks use URL-like template names like {@code "someSchema://foo/bar.ftl"}. FreeMarker understands
-     * this notation, so an absolute path like {@code "/baaz.ftl"} in that template will be resolved too
+     * <p>
+     * You should not use this name to indicate error locations, or to find the actual templates in general, because
+     * localized lookup, acquisition and other lookup strategies can transform names before they get to the
+     * {@link TemplateLoader} (the template storage) mechanism. Use {@link #getSourceName()} for these purposes.
+     * </p>
+     * 
+     * <p>
+     * Some frameworks use URL-like template names like {@code "someSchema://foo/bar.ftl"}. FreeMarker understands this
+     * notation, so an absolute path like {@code "/baaz.ftl"} in that template will be resolved too
      * {@code "someSchema://baaz.ftl"}.
      */
     public String getName() {
@@ -417,10 +539,38 @@ public class Template extends Configurable {
     }
 
     /**
+     * The name that was actually used to load this template from the {@link TemplateLoader} (or from other custom
+     * storage mechanism). This is what should be shown in error messages as the error location. This is usually the
+     * same as {@link #getName()}, except when localized lookup, template acquisition ({@code *} step in the name), or
+     * other {@link TemplateLookupStrategy} transforms the requested name ({@link #getName()}) to a different final
+     * {@link TemplateLoader}-level name. For example, when you get a template with name {@code "foo.ftl"} then because
+     * of localized lookup, it's possible that something like {@code "foo_en.ftl"} will be loaded behind the scenes.
+     * While the template name will be still the same as the requested template name ({@code "foo.ftl"}), errors should
+     * point to {@code "foo_de.ftl"}. Note that relative paths are always resolved relatively to the {@code name}, not
+     * to the {@code sourceName}.
+     * 
+     * @since 2.3.22
+     */
+    public String getSourceName() {
+        return sourceName != null ? sourceName : getName();
+    }
+
+    /**
      * Returns the Configuration object associated with this template.
      */
     public Configuration getConfiguration() {
         return (Configuration) getParent();
+    }
+    
+    /**
+     * Returns the {@link ParserConfiguration} that was used for parsing this template. This is most often the same
+     * object as {@link #getConfiguration()}, but sometimes it's a {@link TemplateConfigurer}, or something else. It's
+     * never {@code null}.
+     * 
+     * @since 2.3.24
+     */
+    public ParserConfiguration getParserConfiguration() {
+        return parserConfiguration;
     }
     
     /**
@@ -433,20 +583,46 @@ public class Template extends Configurable {
     }
 
     /**
-     * Sets the character encoding to use for
-     * included files. Usually you don't set this value manually,
-     * instead it's assigned to the template upon loading.
+     * @param encoding
+     *            The encoding that was used to read this template. When this template {@code #include}-s or
+     *            {@code #import}-s another template, by default it will use this encoding for those. For backward
+     *            compatibility, this can be {@code null}, which will unset this setting.
+     * 
+     * @deprecated Should only be used internally, and might will be removed later.
      */
-
+    @Deprecated
     public void setEncoding(String encoding) {
         this.encoding = encoding;
     }
 
     /**
-     * Returns the character encoding used for reading included files.
+     * Returns the default character encoding used for reading included files.
      */
     public String getEncoding() {
         return this.encoding;
+    }
+    
+    /**
+     * Gets the custom lookup condition with which this template was found. See the {@code customLookupCondition}
+     * parameter of {@link Configuration#getTemplate(String, java.util.Locale, Object, String, boolean, boolean)} for
+     * more explanation.
+     * 
+     * @since 2.3.22
+     */
+    public Object getCustomLookupCondition() {
+        return customLookupCondition;
+    }
+
+    /**
+     * Mostly only used internally; setter pair of {@link #getCustomLookupCondition()}. This meant to be called directly
+     * after instantiating the template with its constructor, after a successfull lookup that used this condition. So
+     * this should only be called from code that deals with creating new {@code Template} objects, like from
+     * {@link TemplateCache}.
+     * 
+     * @since 2.3.22
+     */
+    public void setCustomLookupCondition(Object customLookupCondition) {
+        this.customLookupCondition = customLookupCondition;
     }
 
     /**
@@ -455,9 +631,64 @@ public class Template extends Configurable {
      * couldn't be determined (like because there was no tags in the template, or it was a plain text template), this
      * returns whatever the default is in the current configuration, so it's maybe
      * {@link Configuration#AUTO_DETECT_TAG_SYNTAX}.
+     * 
+     * @since 2.3.20
      */
     public int getActualTagSyntax() {
         return actualTagSyntax;
+    }
+    
+    /**
+     * Returns the naming convention the parser has chosen for this template. If it could be determined, it's
+     * {@link Configuration#LEGACY_NAMING_CONVENTION} or {@link Configuration#CAMEL_CASE_NAMING_CONVENTION}. If it
+     * couldn't be determined (like because there no identifier that's part of the template language was used where
+     * the naming convention matters), this returns whatever the default is in the current configuration, so it's maybe
+     * {@link Configuration#AUTO_DETECT_TAG_SYNTAX}.
+     * 
+     * @since 2.3.23
+     */
+    public int getActualNamingConvention() {
+        return actualNamingConvention;
+    }
+    
+    /**
+     * Returns the output format (see {@link Configuration#setOutputFormat(OutputFormat)}) used for this template.
+     * The output format of a template can come from various places, in order of increasing priority:
+     * {@link Configuration#getOutputFormat()}, {@link ParserConfiguration#getOutputFormat()} (which is usually
+     * provided by {@link Configuration#getTemplateConfigurers()}) and the {@code #ftl} header's {@code output_format}
+     * option in the template.
+     * 
+     * @since 2.3.24
+     */
+    public OutputFormat getOutputFormat() {
+        return outputFormat;
+    }
+    
+    /**
+     * Meant to be called by the parser only. 
+     */
+    void setOutputFormat(OutputFormat outputFormat) {
+        this.outputFormat = outputFormat;
+    }
+    
+    /**
+     * Returns if the template actually uses auto-escaping (see {@link Configuration#setAutoEscapingPolicy(int)}). This value
+     * is decided by the parser based on the actual {@link OutputFormat}, and the auto-escaping enums, in order of
+     * increasing priority: {@link Configuration#getAutoEscapingPolicy()}, {@link ParserConfiguration#getAutoEscapingPolicy()}
+     * (which is usually provided by {@link Configuration#getTemplateConfigurers()}), and finally on the {@code #ftl}
+     * header's {@code auto_esc} option in the template.
+     * 
+     * @since 2.3.24
+     */
+    public boolean getAutoEscaping() {
+        return autoEscaping;
+    }
+
+    /**
+     * Meant to be called by the parser only. 
+     */
+    void setAutoEscaping(boolean autoEscaping) {
+        this.autoEscaping = autoEscaping;
     }
 
     /**
@@ -475,17 +706,21 @@ public class Template extends Configurable {
     }
 
     /**
-     * Called by code internally to maintain
-     * a table of macros
+     * Called by code internally to maintain a table of macros
+     * 
+     * @deprecated Should only be used internally, and might will be removed later.
      */
+    @Deprecated
     public void addMacro(Macro macro) {
         macros.put(macro.getName(), macro);
     }
 
     /**
-     * Called by code internally to maintain
-     * a list of imports
+     * Called by code internally to maintain a list of imports
+     * 
+     * @deprecated Should only be used internally, and might will be removed later.
      */
+    @Deprecated
     public void addImport(LibraryLoad ll) {
         imports.add(ll);
     }
@@ -501,8 +736,7 @@ public class Template extends Configurable {
     public String getSource(int beginColumn,
                             int beginLine,
                             int endColumn,
-                            int endLine)
-    {
+                            int endLine) {
         if (beginLine < 1 || endLine < 1) return null;  // dynamically ?eval-ed expressions has no source available
         
         // Our container is zero-based.
@@ -510,27 +744,31 @@ public class Template extends Configurable {
         --beginColumn;
         --endColumn;
         --endLine;
-        StringBuffer buf = new StringBuffer();
-        for (int i = beginLine ; i<=endLine; i++) {
+        StringBuilder buf = new StringBuilder();
+        for (int i = beginLine ; i <= endLine; i++) {
             if (i < lines.size()) {
                 buf.append(lines.get(i));
             }
         }
         int lastLineLength = lines.get(endLine).toString().length();
-        int trailingCharsToDelete = lastLineLength - endColumn -1;
+        int trailingCharsToDelete = lastLineLength - endColumn - 1;
         buf.delete(0, beginColumn);
         buf.delete(buf.length() - trailingCharsToDelete, buf.length());
         return buf.toString();
     }
 
     /**
-     * This is a helper class that builds up the line table
-     * info for us.
+     * Reader that builds up the line table info for us, and also helps in working around JavaCC's exception
+     * suppression.
      */
     private class LineTableBuilder extends FilterReader {
-
-        StringBuffer lineBuf = new StringBuffer();
+        
+        private final StringBuilder lineBuf = new StringBuilder();
         int lastChar;
+        boolean closed;
+        
+        /** Needed to work around JavaCC behavior where it silently treats any errors as EOF. */ 
+        private Exception failure; 
 
         /**
          * @param r the character stream to wrap
@@ -538,34 +776,76 @@ public class Template extends Configurable {
         LineTableBuilder(Reader r) {
             super(r);
         }
-
-        public int read() throws IOException {
-            int c = in.read();
-            handleChar(c);
-            return c;
+        
+        public boolean hasFailure() {
+            return failure != null;
         }
 
-        public int read(char cbuf[], int off, int len) throws IOException {
-            int numchars = in.read(cbuf, off, len);
-            for (int i=off; i < off+numchars; i++) {
-                char c = cbuf[i];
-                handleChar(c);
+        public void throwFailure() throws IOException {
+            if (failure != null) {
+                if (failure instanceof IOException) {
+                    throw (IOException) failure;
+                }
+                if (failure instanceof RuntimeException) {
+                    throw (RuntimeException) failure;
+                }
+                throw new UndeclaredThrowableException(failure);
             }
-            return numchars;
         }
 
+        @Override
+        public int read() throws IOException {
+            try {
+                int c = in.read();
+                handleChar(c);
+                return c;
+            } catch (Exception e) {
+                throw rememberException(e);
+            }
+        }
+
+        private IOException rememberException(Exception e) throws IOException {
+            // JavaCC used to read from the Reader after it was closed. So we must not treat that as a failure. 
+            if (!closed) {
+                failure = e;
+            }
+            if (e instanceof IOException) {
+                return (IOException) e;
+            }
+            if (e instanceof RuntimeException) {
+                throw (RuntimeException) e;
+            }
+            throw new UndeclaredThrowableException(e);
+        }
+
+        @Override
+        public int read(char cbuf[], int off, int len) throws IOException {
+            try {
+                int numchars = in.read(cbuf, off, len);
+                for (int i = off; i < off + numchars; i++) {
+                    char c = cbuf[i];
+                    handleChar(c);
+                }
+                return numchars;
+            } catch (Exception e) {
+                throw rememberException(e);
+            }
+        }
+
+        @Override
         public void close() throws IOException {
-            if (lineBuf.length() >0) {
+            if (lineBuf.length() > 0) {
                 lines.add(lineBuf.toString());
                 lineBuf.setLength(0);
             }
             super.close();
+            closed = true;
         }
 
         private void handleChar(int c) {
             if (c == '\n' || c == '\r') {
                 if (lastChar == '\r' && c == '\n') { // CRLF under Windoze
-                    int lastIndex = lines.size() -1;
+                    int lastIndex = lines.size() - 1;
                     String lastLine = (String) lines.get(lastIndex);
                     lines.set(lastIndex, lastLine + '\n');
                 } else {
@@ -573,14 +853,12 @@ public class Template extends Configurable {
                     lines.add(lineBuf.toString());
                     lineBuf.setLength(0);
                 }
-            }
-            else if (c == '\t') {
-                int numSpaces = 8 - (lineBuf.length() %8);
-                for (int i=0; i<numSpaces; i++) {
+            } else if (c == '\t') {
+                int numSpaces = 8 - (lineBuf.length() % 8);
+                for (int i = 0; i < numSpaces; i++) {
                     lineBuf.append(' ');
                 }
-            }
-            else {
+            } else {
                 lineBuf.append((char) c);
             }
             lastChar = c;
@@ -588,23 +866,35 @@ public class Template extends Configurable {
     }
 
     /**
-     *  @return the root TemplateElement object.
+     * @deprecated Should only be used internally, and might will be removed later.
      */
+    @Deprecated
     public TemplateElement getRootTreeNode() {
         return rootElement;
     }
     
+    /**
+     * @deprecated Should only be used internally, and might will be removed later.
+     */
+    @Deprecated
     public Map getMacros() {
         return macros;
     }
 
+    /**
+     * @deprecated Should only be used internally, and might will be removed later.
+     */
+    @Deprecated
     public List getImports() {
         return imports;
     }
 
     /**
      * This is used internally.
+     * 
+     * @deprecated Should only be used internally, and might will be removed later.
      */
+    @Deprecated
     public void addPrefixNSMapping(String prefix, String nsURI) {
         if (nsURI.length() == 0) {
             throw new IllegalArgumentException("Cannot map empty string URI");
@@ -683,18 +973,16 @@ public class Template extends Configurable {
     }
     
     /**
-     * @return an array of the {@link TemplateElement}s containing the given 
-     * column and line numbers.
-     * @param column the column     
-     * @param line the line
+     * @return an array of the {@link TemplateElement}s containing the given column and line numbers.
+     * @deprecated Should only be used internally, and might will be removed later.
      */
+    @Deprecated
     public List containingElements(int column, int line) {
-        ArrayList elements = new ArrayList();
+        final ArrayList elements = new ArrayList();
         TemplateElement element = rootElement;
-mainloop:
-        while (element.contains(column, line)) {
+        mainloop: while (element.contains(column, line)) {
             elements.add(element);
-            for (Enumeration enumeration = element.children(); enumeration.hasMoreElements();) {
+            for (Enumeration enumeration = element.children(); enumeration.hasMoreElements(); ) {
                 TemplateElement elem = (TemplateElement) enumeration.nextElement();
                 if (elem.contains(column, line)) {
                     element = elem;
@@ -703,21 +991,60 @@ mainloop:
             }
             break;
         }
-        if (elements == null || elements.isEmpty()) {
-            return null;
-        }
-        return elements;
+        return elements.isEmpty() ? null : elements;
     }
 
+    /**
+     * Thrown by the {@link Template} constructors that specify a non-{@code null} encoding whoch doesn't match the
+     * encoding specified in the {@code #ftl} header of the template.
+     */
     static public class WrongEncodingException extends ParseException {
         private static final long serialVersionUID = 1L;
 
+        /** @deprecated Use {@link #getTemplateSpecifiedEncoding()} instead. */
+        @Deprecated
         public String specifiedEncoding;
+        
+        private final String constructorSpecifiedEncoding;
 
-        public WrongEncodingException(String specifiedEncoding) {
-            this.specifiedEncoding = specifiedEncoding;
+        /**
+         * @deprecated Use {@link #WrongEncodingException(String, String)}.
+         */
+        @Deprecated
+        public WrongEncodingException(String templateSpecifiedEncoding) {
+            this(templateSpecifiedEncoding, null);
+        }
+
+        /**
+         * @since 2.3.22
+         */
+        public WrongEncodingException(String templateSpecifiedEncoding, String constructorSpecifiedEncoding) {
+            this.specifiedEncoding = templateSpecifiedEncoding;
+            this.constructorSpecifiedEncoding = constructorSpecifiedEncoding;
+        }
+        
+        @Override
+        public String getMessage() {
+            return "Encoding specified inside the template (" + specifiedEncoding
+                    + ") doesn't match the encoding specified for the Template constructor"
+                    + (constructorSpecifiedEncoding != null ? " (" + constructorSpecifiedEncoding + ")." : ".");
+        }
+
+        /**
+         * @since 2.3.22
+         */
+        public String getTemplateSpecifiedEncoding() {
+            return specifiedEncoding;
+        }
+
+        /**
+         * @since 2.3.22
+         */
+        public String getConstructorSpecifiedEncoding() {
+            return constructorSpecifiedEncoding;
         }
 
     }
+
 }
 

@@ -33,14 +33,12 @@ import freemarker.template.TemplateSequenceModel;
 public class OverloadedMethodsModel
 implements
 	TemplateMethodModelEx,
-	TemplateSequenceModel
-{
+	TemplateSequenceModel {
     private final Object object;
     private final OverloadedMethods overloadedMethods;
     private final BeansWrapper wrapper;
     
-    OverloadedMethodsModel(Object object, OverloadedMethods overloadedMethods, BeansWrapper wrapper)
-    {
+    OverloadedMethodsModel(Object object, OverloadedMethods overloadedMethods, BeansWrapper wrapper) {
         this.object = object;
         this.overloadedMethods = overloadedMethods;
         this.wrapper = wrapper;
@@ -54,15 +52,11 @@ implements
      * unambiguously.
      */
     public Object exec(List arguments)
-    throws
-        TemplateModelException
-    {
+    throws TemplateModelException {
         MemberAndArguments maa = overloadedMethods.getMemberAndArguments(arguments, wrapper);
         try {
             return maa.invokeMethod(wrapper, object);
-        }
-        catch(Exception e)
-        {
+        } catch (Exception e) {
             if (e instanceof TemplateModelException) throw (TemplateModelException) e;
             
             throw _MethodUtil.newInvocationTemplateModelException(
@@ -72,14 +66,12 @@ implements
         }
     }
 
-    public TemplateModel get(int index) throws TemplateModelException
-    {
+    public TemplateModel get(int index) throws TemplateModelException {
         return (TemplateModel) exec(Collections.singletonList(
-                new SimpleNumber(new Integer(index))));
+                new SimpleNumber(Integer.valueOf(index))));
     }
 
-    public int size() throws TemplateModelException
-    {
+    public int size() throws TemplateModelException {
         throw new TemplateModelException("?size is unsupported for " + getClass().getName());
     }
 }

@@ -17,6 +17,7 @@
 package freemarker.core;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.io.Writer;
 import java.util.Map;
 
@@ -39,8 +40,8 @@ import freemarker.template.TemplateTransformModel;
  * specify another parameter to the method call in which case the
  * template name suffix is the specified id instead of "anonymous_interpreted".
  */
-class Interpret extends BuiltIn
-{
+class Interpret extends BuiltInForOutputFormatRelated {
+    
     /**
      * Constructs a template on-the-fly and returns it embedded in a
      * {@link TemplateTransformModel}.
@@ -56,26 +57,19 @@ class Interpret extends BuiltIn
      * a <tt>&lt;transform></tt> block will process the generated template
      * just as if it had been <tt>&lt;transform></tt>-ed at that point.
      */
-    TemplateModel _eval(Environment env)
-            throws TemplateException 
-    {
+    @Override
+    protected TemplateModel calculateResult(Environment env) throws TemplateException {
         TemplateModel model = target.eval(env);
         Expression sourceExpr = null;
         String id = "anonymous_interpreted";
-        if(model instanceof TemplateSequenceModel)
-        {
-            sourceExpr = ((Expression)new DynamicKeyName(target, new NumberLiteral(new Integer(0))).copyLocationFrom(target));
-            if(((TemplateSequenceModel)model).size() > 1)
-            {
-                id = ((Expression)new DynamicKeyName(target, new NumberLiteral(new Integer(1))).copyLocationFrom(target)).evalAndCoerceToString(env);
+        if (model instanceof TemplateSequenceModel) {
+            sourceExpr = ((Expression) new DynamicKeyName(target, new NumberLiteral(Integer.valueOf(0))).copyLocationFrom(target));
+            if (((TemplateSequenceModel) model).size() > 1) {
+                id = ((Expression) new DynamicKeyName(target, new NumberLiteral(Integer.valueOf(1))).copyLocationFrom(target)).evalAndCoerceToString(env);
             }
-        }
-        else if (model instanceof TemplateScalarModel)
-        {
+        } else if (model instanceof TemplateScalarModel) {
             sourceExpr = target;
-        }
-        else
-        {
+        } else {
             throw new UnexpectedTypeException(
                     target, model,
                     "sequence or string", new Class[] { TemplateSequenceModel.class, TemplateScalarModel.class },
@@ -85,15 +79,19 @@ class Interpret extends BuiltIn
         Template parentTemplate = env.getTemplate();
         
         final Template interpretedTemplate;
-        try
-        {
+        try {
+            ParserConfiguration pCfg = parentTemplate.getParserConfiguration();
+            // pCfg.outputFormat is exceptional: it's inherited from the lexical context
+            if (pCfg.getOutputFormat() != outputFormat) {
+                pCfg = new _ParserConfigurationWithInheritedFormat(pCfg, outputFormat, null);
+            }
             interpretedTemplate = new Template(
                     (parentTemplate.getName() != null ? parentTemplate.getName() : "nameless_template") + "->" + id,
-                    templateSource,
-                    parentTemplate.getConfiguration());
-        }
-        catch(IOException e)
-        {
+                    null,
+                    new StringReader(templateSource),
+                    parentTemplate.getConfiguration(), pCfg,
+                    null);
+        } catch (IOException e) {
             throw new _MiscTemplateException(this, e, env, new Object[] {
                         "Template parsing with \"?", key, "\" has failed with this error:\n\n",
                         MessageUtil.EMBEDDED_MESSAGE_BEGIN,
@@ -108,19 +106,15 @@ class Interpret extends BuiltIn
 
     private class TemplateProcessorModel
     implements
-        TemplateTransformModel
-    {
+        TemplateTransformModel {
         private final Template template;
         
-        TemplateProcessorModel(Template template)
-        {
+        TemplateProcessorModel(Template template) {
             this.template = template;
         }
         
-        public Writer getWriter(final Writer out, Map args) throws TemplateModelException, IOException
-        {
-            try
-            {
+        public Writer getWriter(final Writer out, Map args) throws TemplateModelException, IOException {
+            try {
                 Environment env = Environment.getCurrentEnvironment();
                 boolean lastFIRE = env.setFastInvalidReferenceExceptions(false);
                 try {
@@ -128,32 +122,31 @@ class Interpret extends BuiltIn
                 } finally {
                     env.setFastInvalidReferenceExceptions(lastFIRE);
                 }
-            }
-            catch(Exception e)
-            {
-                throw new _TemplateModelException(e, new Object[] {
+            } catch (Exception e) {
+                throw new _TemplateModelException(e,
                         "Template created with \"?", key, "\" has stopped with this error:\n\n",
                         MessageUtil.EMBEDDED_MESSAGE_BEGIN,
                         new _DelayedGetMessage(e),
-                        MessageUtil.EMBEDDED_MESSAGE_END });
+                        MessageUtil.EMBEDDED_MESSAGE_END);
             }
     
             return new Writer(out)
             {
-                public void close()
-                {
+                @Override
+                public void close() {
                 }
                 
-                public void flush() throws IOException
-                {
+                @Override
+                public void flush() throws IOException {
                     out.flush();
                 }
                 
-                public void write(char[] cbuf, int off, int len) throws IOException
-                {
+                @Override
+                public void write(char[] cbuf, int off, int len) throws IOException {
                     out.write(cbuf, off, len);
                 }
             };
         }
     }
+
 }

@@ -22,9 +22,17 @@ package freemarker.template.utility;
  * @since 2.3.20
  */
 public class NullArgumentException extends IllegalArgumentException {
+
+    public NullArgumentException() {
+        super("The argument can't be null");
+    }
     
     public NullArgumentException(String argumentName) {
         super("The \"" + argumentName + "\" argument can't be null");
+    }
+
+    public NullArgumentException(String argumentName, String details) {
+        super("The \"" + argumentName + "\" argument can't be null. " + details);
     }
     
     /**
@@ -36,4 +44,13 @@ public class NullArgumentException extends IllegalArgumentException {
         }
     }
 
+    /**
+     * @since 2.3.22
+     */
+    public static void check(Object argumentValue) {
+        if (argumentValue == null) {
+            throw new NullArgumentException();
+        }
+    }
+    
 }

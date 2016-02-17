@@ -18,8 +18,10 @@ package freemarker.core;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.util.Enumeration;
 
 import freemarker.template.SimpleScalar;
+import freemarker.template.Template;
 import freemarker.template.TemplateException;
 import freemarker.template.TemplateExceptionHandler;
 import freemarker.template.TemplateModel;
@@ -35,24 +37,42 @@ final class StringLiteral extends Expression implements TemplateScalarModel {
         this.value = value;
     }
     
-    void checkInterpolation() throws ParseException {
+    /**
+     * @param parentTkMan
+     *            The token source of the template that contains this string literal. As of this writing, we only need
+     *            this to share the {@code namingConvetion} with that.
+     */
+    // TODO This should be the part of the "parent" parsing; now it contains hacks like those with namingConvention.  
+    void parseValue(FMParserTokenManager parentTkMan) throws ParseException {
         if (value.length() > 3 && (value.indexOf("${") >= 0 || value.indexOf("#{") >= 0)) {
-            SimpleCharStream scs = new SimpleCharStream(new StringReader(value), beginLine, beginColumn+1, value.length());
-            FMParserTokenManager token_source = new FMParserTokenManager(scs);
-            token_source.onlyTextOutput = true;
-            FMParser parser = new FMParser(token_source);
-            parser.setTemplate(getTemplate());
+            
+            Template parentTemplate = getTemplate();
+
             try {
-                dynamicValue = parser.FreeMarkerText();
-            }
-            catch(ParseException e) {
-                e.setTemplateName(getTemplate().getName());
+                FMParserTokenManager tkMan = new FMParserTokenManager(
+                        new SimpleCharStream(
+                                new StringReader(value),
+                                beginLine, beginColumn + 1,
+                                value.length()));
+                
+                FMParser parser = new FMParser(parentTemplate, false, tkMan, parentTemplate.getParserConfiguration());
+                // We continue from the parent parser's current state:
+                parser.setupStringLiteralMode(parentTkMan);
+                try {
+                    dynamicValue = parser.FreeMarkerText();
+                } finally {
+                    // The parent parser continues from this parser's current state:
+                    parser.tearDownStringLiteralMode(parentTkMan);
+                }
+            } catch (ParseException e) {
+                e.setTemplateName(parentTemplate.getSourceName());
                 throw e;
             }
             this.constantValue = null;
         }
     }
     
+    @Override
     TemplateModel _eval(Environment env) throws TemplateException {
         return new SimpleScalar(evalAndCoerceToString(env));
     }
@@ -69,37 +89,54 @@ final class StringLiteral extends Expression implements TemplateScalarModel {
                 && dynamicValue.getChildAt(0) instanceof DollarVariable;
     }
     
+    @Override
     String evalAndCoerceToString(Environment env) throws TemplateException {
         if (dynamicValue == null) {
             return value;
-        } 
-        else {
+        } else {
             TemplateExceptionHandler teh = env.getTemplateExceptionHandler();
             env.setTemplateExceptionHandler(TemplateExceptionHandler.RETHROW_HANDLER);
             try {
                return env.renderElementToString(dynamicValue);
-            }
-            catch (IOException ioe) {
+            } catch (IOException ioe) {
                 throw new _MiscTemplateException(ioe, env);
-            }
-            finally {
+            } finally {
                 env.setTemplateExceptionHandler(teh);
             }
         }
     }
 
+    @Override
     public String getCanonicalForm() {
-        return "\"" + StringUtil.FTLStringLiteralEnc(value) + "\""; 
+        if (dynamicValue == null) {
+            return StringUtil.ftlQuote(value);
+        } else {
+            StringBuilder sb = new StringBuilder();
+            sb.append('"');
+            for (Enumeration childrenEnum = dynamicValue.children(); childrenEnum.hasMoreElements(); ) {
+                TemplateElement child = (TemplateElement) childrenEnum.nextElement();
+                if (child instanceof Interpolation) {
+                    sb.append(((Interpolation) child).getCanonicalFormInStringLiteral());
+                } else {
+                    sb.append(StringUtil.FTLStringLiteralEnc(child.getCanonicalForm(), '"'));
+                }
+            }
+            sb.append('"');
+            return sb.toString();
+        }
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return dynamicValue == null ? getCanonicalForm() : "dynamic \"...\"";
     }
     
+    @Override
     boolean isLiteral() {
         return dynamicValue == null;
     }
 
+    @Override
     protected Expression deepCloneWithIdentifierReplaced_inner(
             String replacedIdentifier, Expression replacement, ReplacemenetState replacementState) {
         StringLiteral cloned = new StringLiteral(value);
@@ -108,15 +145,18 @@ final class StringLiteral extends Expression implements TemplateScalarModel {
         return cloned;
     }
 
+    @Override
     int getParameterCount() {
         return 1;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         if (idx != 0) throw new IndexOutOfBoundsException();
         return dynamicValue;
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         if (idx != 0) throw new IndexOutOfBoundsException();
         return ParameterRole.EMBEDDED_TEMPLATE;

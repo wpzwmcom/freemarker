@@ -43,134 +43,139 @@ public class _Dom4jNavigator extends Navigator {
     public _Dom4jNavigator() {
     } 
 
+    @Override
     void getAsString(Object node, StringWriter sw) {
-        sw.getBuffer().append(((Node)node).asXML());
+        sw.getBuffer().append(((Node) node).asXML());
     }
 
+    @Override
     void getChildren(Object node, String localName, String namespaceUri, List result) {
-        if(node instanceof Element) {
-            Element e = (Element)node;
-            if(localName == null) {
+        if (node instanceof Element) {
+            Element e = (Element) node;
+            if (localName == null) {
                 result.addAll(e.elements());
-            }
-            else {
+            } else {
                 result.addAll(e.elements(e.getQName().getDocumentFactory().createQName(localName, "", namespaceUri)));
             }
-        }
-        else if(node instanceof Document) {
-            Element root = ((Document)node).getRootElement();
-            if(localName == null || (equal(root.getName(), localName) && equal(root.getNamespaceURI(), namespaceUri))) {
+        } else if (node instanceof Document) {
+            Element root = ((Document) node).getRootElement();
+            if (localName == null || (equal(root.getName(), localName) && equal(root.getNamespaceURI(), namespaceUri))) {
                 result.add(root);
             }
         }
     }
     
+    @Override
     void getAttributes(Object node, String localName, String namespaceUri, List result) {
-        if(node instanceof Element) {
-            Element e = (Element)node;
-            if(localName == null) {
+        if (node instanceof Element) {
+            Element e = (Element) node;
+            if (localName == null) {
                 result.addAll(e.attributes());
-            }
-            else {
+            } else {
                 Attribute attr = e.attribute(e.getQName().getDocumentFactory().createQName(localName, "", namespaceUri)); 
-                if(attr != null) {
+                if (attr != null) {
                     result.add(attr);
                 }
             }
-        }
-        else if (node instanceof ProcessingInstruction) {
-            ProcessingInstruction pi = (ProcessingInstruction)node;
+        } else if (node instanceof ProcessingInstruction) {
+            ProcessingInstruction pi = (ProcessingInstruction) node;
             if ("target".equals(localName)) {
                 result.add(new DefaultAttribute("target", pi.getTarget()));
-            }
-            else if ("data".equals(localName)) {
+            } else if ("data".equals(localName)) {
                 result.add(new DefaultAttribute("data", pi.getText()));
-            }
-            else {
+            } else {
                 result.add(new DefaultAttribute(localName, pi.getValue(localName)));
             }
         } else if (node instanceof DocumentType) {
-            DocumentType doctype = (DocumentType)node;
+            DocumentType doctype = (DocumentType) node;
             if ("publicId".equals(localName)) {
                 result.add(new DefaultAttribute("publicId", doctype.getPublicID()));
-            }
-            else if ("systemId".equals(localName)) {
+            } else if ("systemId".equals(localName)) {
                 result.add(new DefaultAttribute("systemId", doctype.getSystemID()));
-            }
-            else if ("elementName".equals(localName)) {
+            } else if ("elementName".equals(localName)) {
                 result.add(new DefaultAttribute("elementName", doctype.getElementName()));
             }
         } 
     }
 
+    @Override
     void getDescendants(Object node, List result) {
-        if(node instanceof Branch) {
-            getDescendants((Branch)node, result);
+        if (node instanceof Branch) {
+            getDescendants((Branch) node, result);
         }
     }
     
     private void getDescendants(Branch node, List result) {
         List content = node.content();
-        for (Iterator iter = content.iterator(); iter.hasNext();) {
+        for (Iterator iter = content.iterator(); iter.hasNext(); ) {
             Node subnode = (Node) iter.next();
-            if(subnode instanceof Element) {
+            if (subnode instanceof Element) {
                 result.add(subnode);
                 getDescendants(subnode, result);
             }
         }
     }
 
+    @Override
     Object getParent(Object node) {
-        return ((Node)node).getParent();
+        return ((Node) node).getParent();
     }
 
+    @Override
     Object getDocument(Object node) {
-        return ((Node)node).getDocument();
+        return ((Node) node).getDocument();
     }
 
+    @Override
     Object getDocumentType(Object node) {
         return 
             node instanceof Document 
-            ? ((Document)node).getDocType()
+            ? ((Document) node).getDocType()
             : null; 
     }
     
+    @Override
     void getContent(Object node, List result) {
-        if(node instanceof Branch) {
-            result.addAll(((Branch)node).content());
+        if (node instanceof Branch) {
+            result.addAll(((Branch) node).content());
         }
     }
 
+    @Override
     String getText(Object node) {
-        return ((Node)node).getText();
+        return ((Node) node).getText();
     }
 
+    @Override
     String getLocalName(Object node) {
-        return ((Node)node).getName();
+        return ((Node) node).getName();
     }
 
+    @Override
     String getNamespacePrefix(Object node) {
-        if(node instanceof Element) {
-            return ((Element)node).getNamespacePrefix();
+        if (node instanceof Element) {
+            return ((Element) node).getNamespacePrefix();
         }
-        if(node instanceof Attribute) {
-            return ((Attribute)node).getNamespacePrefix();
+        if (node instanceof Attribute) {
+            return ((Attribute) node).getNamespacePrefix();
         }
         return null;
     }
 
+    @Override
     String getNamespaceUri(Object node) {
-        if(node instanceof Element) {
-            return ((Element)node).getNamespaceURI();
+        if (node instanceof Element) {
+            return ((Element) node).getNamespaceURI();
         }
-        if(node instanceof Attribute) {
-            return ((Attribute)node).getNamespaceURI();
+        if (node instanceof Attribute) {
+            return ((Attribute) node).getNamespaceURI();
         }
         return null;
     }
 
+    @Override
     String getType(Object node) {
-        switch(((Node)node).getNodeType()) {
+        switch(((Node) node).getNodeType()) {
             case Node.ATTRIBUTE_NODE: {
                 return "attribute";
             }
@@ -205,12 +210,11 @@ public class _Dom4jNavigator extends Navigator {
         return "unknown";
     }
 
-    XPathEx createXPathEx(String xpathString) throws TemplateModelException
-    {
+    @Override
+    XPathEx createXPathEx(String xpathString) throws TemplateModelException {
         try {
             return new Dom4jXPathEx(xpathString);
-        }
-        catch(Exception e) {
+        } catch (Exception e) {
             throw new TemplateModelException(e);
         }
     }
@@ -219,25 +223,19 @@ public class _Dom4jNavigator extends Navigator {
     extends
         Dom4jXPath
     implements
-        XPathEx
-    {
+        XPathEx {
         Dom4jXPathEx(String path)
-        throws 
-            Exception
-        {
+        throws Exception {
             super(path);
         }
 
         public List selectNodes(Object object, NamespaceContext namespaces)
-        throws
-            TemplateModelException
-        {
+        throws TemplateModelException {
             Context context = getContext(object);
             context.getContextSupport().setNamespaceContext(namespaces);
             try {
                 return selectNodesForContext(context);
-            }
-            catch(Exception e) {
+            } catch (Exception e) {
                 throw new TemplateModelException(e);
             }
         } 

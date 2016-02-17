@@ -25,7 +25,7 @@ import java.util.Map;
 import freemarker.template.utility.StringUtil;
 
 /**
- * A {@link TemplateLoader} that uses a Map with Strings as its source of 
+ * A {@link TemplateLoader} that uses a {@link Map} with {@link String}-s as its source of 
  * templates.
  *
  * In most case the regular way of loading templates from files will be fine.
@@ -46,8 +46,8 @@ import freemarker.template.utility.StringUtil;
  * it:
  * <pre>
  *   StringTemplateLoader stringLoader = new StringTemplateLoader();
- *   stringLoader.putTemplate("greetTemplate", "<#macro greet>Hello</#macro>");
- *   stringLoader.putTemplate("myTemplate", "<#include \"greetTemplate\"><@greet/> World!");
+ *   stringLoader.putTemplate("greetTemplate", "&lt;#macro greet&gt;Hello&lt;/#macro&gt;");
+ *   stringLoader.putTemplate("myTemplate", "&lt;#include \"greetTemplate\"&gt;&lt;@greet/&gt; World!");
  * </pre>
  * Then you tell your Configuration object to use it:
  * <pre>
@@ -58,7 +58,8 @@ import freemarker.template.utility.StringUtil;
  * do so using a {@link freemarker.cache.MultiTemplateLoader}.
  */
 public class StringTemplateLoader implements TemplateLoader {
-    private final Map templates = new HashMap();
+    
+    private final Map<String, StringTemplateSource> templates = new HashMap<String, StringTemplateSource>();
     
     /**
      * Puts a template into the loader. A call to this method is identical to 
@@ -98,11 +99,11 @@ public class StringTemplateLoader implements TemplateLoader {
     }
     
     public long getLastModified(Object templateSource) {
-        return ((StringTemplateSource)templateSource).lastModified;
+        return ((StringTemplateSource) templateSource).lastModified;
     }
     
     public Reader getReader(Object templateSource, String encoding) {
-        return new StringReader(((StringTemplateSource)templateSource).source);
+        return new StringReader(((StringTemplateSource) templateSource).source);
     }
     
     private static class StringTemplateSource {
@@ -111,13 +112,13 @@ public class StringTemplateLoader implements TemplateLoader {
         private final long lastModified;
         
         StringTemplateSource(String name, String source, long lastModified) {
-            if(name == null) {
+            if (name == null) {
                 throw new IllegalArgumentException("name == null");
             }
-            if(source == null) {
+            if (source == null) {
                 throw new IllegalArgumentException("source == null");
             }
-            if(lastModified < -1L) {
+            if (lastModified < -1L) {
                 throw new IllegalArgumentException("lastModified < -1L");
             }
             this.name = name;
@@ -125,13 +126,15 @@ public class StringTemplateLoader implements TemplateLoader {
             this.lastModified = lastModified;
         }
         
+        @Override
         public boolean equals(Object obj) {
-            if(obj instanceof StringTemplateSource) {
-                return name.equals(((StringTemplateSource)obj).name);
+            if (obj instanceof StringTemplateSource) {
+                return name.equals(((StringTemplateSource) obj).name);
             }
             return false;
         }
         
+        @Override
         public int hashCode() {
             return name.hashCode();
         }
@@ -142,9 +145,11 @@ public class StringTemplateLoader implements TemplateLoader {
      * 
      * @since 2.3.21
      */
+    @Override
     public String toString() {
-        StringBuffer sb = new StringBuffer();
-        sb.append("StringTemplateLoader(Map { ");
+        StringBuilder sb = new StringBuilder();
+        sb.append(TemplateLoaderUtils.getClassNameForToString(this));
+        sb.append("(Map { ");
         int cnt = 0;
         for (Iterator it = templates.keySet().iterator(); it.hasNext(); ) {
             cnt++;

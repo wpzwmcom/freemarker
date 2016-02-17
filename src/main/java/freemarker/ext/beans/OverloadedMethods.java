@@ -22,6 +22,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 
+import freemarker.core.TemplateMarkupOutputModel;
 import freemarker.core._DelayedConversionToString;
 import freemarker.core._ErrorDescriptionBuilder;
 import freemarker.core._TemplateModelException;
@@ -88,21 +89,23 @@ final class OverloadedMethods {
             varargsRes = null;
         }
         
-        _ErrorDescriptionBuilder edb = new _ErrorDescriptionBuilder(new Object[] {
+        _ErrorDescriptionBuilder edb = new _ErrorDescriptionBuilder(
                 toCompositeErrorMessage(
                         (EmptyMemberAndArguments) fixArgsRes,
                         (EmptyMemberAndArguments) varargsRes,
                         tmArgs),
                 "\nThe matching overload was searched among these members:\n",
-                memberListToString()});
+                memberListToString());
         if (!bugfixed) {
-            edb.tip("You seem to use BeansWrapper with incompatibleImprovements set blow 2.3.21. If you think this "
+            edb.tip("You seem to use BeansWrapper with incompatibleImprovements set below 2.3.21. If you think this "
                     + "error is unfounded, enabling 2.3.21 fixes may helps. See version history for more.");
         }
+        addMarkupBITipAfterNoNoMarchIfApplicable(edb, tmArgs);
         throw new _TemplateModelException(edb);
     }
 
-    private Object[] toCompositeErrorMessage(final EmptyMemberAndArguments fixArgsEmptyRes, final EmptyMemberAndArguments varargsEmptyRes,
+    private Object[] toCompositeErrorMessage(
+            final EmptyMemberAndArguments fixArgsEmptyRes, final EmptyMemberAndArguments varargsEmptyRes,
             List tmArgs) {
         final Object[] argsErrorMsg;
         if (varargsEmptyRes != null) {
@@ -140,23 +143,21 @@ final class OverloadedMethods {
     private _DelayedConversionToString memberListToString() {
         return new _DelayedConversionToString(null) {
             
+            @Override
             protected String doConversion(Object obj) {
-                Iterator fixArgMethodsIter = fixArgMethods.getMemberDescriptors();
-                Iterator varargMethodsIter = varargMethods != null ? varargMethods.getMemberDescriptors() : null;
+                final Iterator fixArgMethodsIter = fixArgMethods.getMemberDescriptors();
+                final Iterator varargMethodsIter = varargMethods != null ? varargMethods.getMemberDescriptors() : null;
                 
                 boolean hasMethods = fixArgMethodsIter.hasNext() || (varargMethodsIter != null && varargMethodsIter.hasNext()); 
                 if (hasMethods) {
-                    StringBuffer sb = new StringBuffer();
+                    StringBuilder sb = new StringBuilder();
                     HashSet fixArgMethods = new HashSet();
-                    if (fixArgMethodsIter != null) {
-                        
-                        while (fixArgMethodsIter.hasNext()) {
-                            if (sb.length() != 0) sb.append(",\n");
-                            sb.append("    ");
-                            CallableMemberDescriptor callableMemberDesc = (CallableMemberDescriptor) fixArgMethodsIter.next();
-                            fixArgMethods.add(callableMemberDesc);
-                            sb.append(callableMemberDesc.getDeclaration());
-                        }
+                    while (fixArgMethodsIter.hasNext()) {
+                        if (sb.length() != 0) sb.append(",\n");
+                        sb.append("    ");
+                        CallableMemberDescriptor callableMemberDesc = (CallableMemberDescriptor) fixArgMethodsIter.next();
+                        fixArgMethods.add(callableMemberDesc);
+                        sb.append(callableMemberDesc.getDeclaration());
                     }
                     if (varargMethodsIter != null) {
                         while (varargMethodsIter.hasNext()) {
@@ -177,6 +178,40 @@ final class OverloadedMethods {
         };
     }
     
+    /**
+     * Adds tip to the error message if converting a {@link TemplateMarkupOutputModel} argument to {@link String} might
+     * allows finding a matching overload. 
+     */
+    private void addMarkupBITipAfterNoNoMarchIfApplicable(_ErrorDescriptionBuilder edb,
+            List tmArgs) {
+        for (int argIdx = 0; argIdx < tmArgs.size(); argIdx++) {
+            Object tmArg = tmArgs.get(argIdx);
+            if (tmArg instanceof TemplateMarkupOutputModel) {
+                for (Iterator membDescs = fixArgMethods.getMemberDescriptors(); membDescs.hasNext();) {
+                    CallableMemberDescriptor membDesc = (CallableMemberDescriptor) membDescs.next();
+                    Class[] paramTypes = membDesc.getParamTypes();
+                    
+                    Class paramType = null;
+                    if (membDesc.isVarargs() && argIdx >= paramTypes.length - 1) {
+                        paramType = paramTypes[paramTypes.length - 1];
+                        if (paramType.isArray()) {
+                            paramType = paramType.getComponentType();
+                        }
+                    }
+                    if (paramType == null && argIdx < paramTypes.length) {
+                        paramType = paramTypes[argIdx];
+                    }
+                    if (paramType != null) {
+                        if (paramType.isAssignableFrom(String.class) && !paramType.isAssignableFrom(tmArg.getClass())) {
+                            edb.tip(SimpleMethodModel.MARKUP_OUTPUT_TO_STRING_TIP);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private _DelayedConversionToString getTMActualParameterTypes(List arguments) {
         final String[] argumentTypeDescs = new String[arguments.size()];
         for (int i = 0; i < arguments.size(); i++) {
@@ -185,6 +220,7 @@ final class OverloadedMethods {
         
         return new DelayedCallSignatureToString(argumentTypeDescs) {
 
+            @Override
             String argumentToString(Object argType) {
                 return (String) argType;
             }
@@ -201,6 +237,7 @@ final class OverloadedMethods {
         
         return new DelayedCallSignatureToString(argumentTypes) {
 
+            @Override
             String argumentToString(Object argType) {
                 return argType != null
                         ? ClassUtil.getShortClassName((Class) argType)
@@ -216,10 +253,11 @@ final class OverloadedMethods {
             super(argTypeArray);
         }
 
+        @Override
         protected String doConversion(Object obj) {
             Object[] argTypes = (Object[]) obj;
             
-            StringBuffer sb = new StringBuffer();
+            StringBuilder sb = new StringBuilder();
             for (int i = 0; i < argTypes.length; i++) {
                 if (i != 0) sb.append(", ");
                 sb.append(argumentToString(argTypes[i]));

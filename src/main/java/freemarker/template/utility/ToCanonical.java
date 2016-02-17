@@ -25,18 +25,24 @@ import freemarker.template.Template;
 
 /**
  * Read in a template and convert it to a canonical format.
+ * 
+ * @deprecated Will be removed (main method in a library, often classified as CWE-489 "Leftover Debug Code").
  */
-
+@Deprecated
 public class ToCanonical {
 
     static Configuration config = Configuration.getDefaultConfiguration();
 
+    /**
+     * @deprecated Will be removed (main method in a library, often classified as CWE-489 "Leftover Debug Code").
+     */
+    @Deprecated
     static public void main(String[] args) {
         config.setWhitespaceStripping(false);
         if (args.length == 0) {
             usage();
         }
-        for (int i=0; i<args.length; i++) {
+        for (int i = 0; i < args.length; i++) {
             File f = new File(args[i]);
             if (!f.exists()) {
                 System.err.println("File " + f + " doesn't exist.");

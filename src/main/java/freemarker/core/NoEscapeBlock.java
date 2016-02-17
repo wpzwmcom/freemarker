@@ -25,37 +25,54 @@ import freemarker.template.TemplateException;
 class NoEscapeBlock extends TemplateElement {
 
     NoEscapeBlock(TemplateElement nestedBlock) {
-        this.nestedBlock = nestedBlock;
+        setNestedBlock(nestedBlock);
     }
     
+    @Override
     void accept(Environment env) throws TemplateException, IOException {
-        if (nestedBlock != null) {
-            env.visit(nestedBlock);
+        if (getNestedBlock() != null) {
+            env.visit(getNestedBlock());
         }
     }
 
+    @Override
     protected String dump(boolean canonical) {
         if (canonical) {
-            return "<" + getNodeTypeSymbol() + '>' + nestedBlock.getCanonicalForm() + "</" + getNodeTypeSymbol() + '>';
+            return "<" + getNodeTypeSymbol() + '>' + getNestedBlock().getCanonicalForm()
+                    + "</" + getNodeTypeSymbol() + '>';
         } else {
             return getNodeTypeSymbol();
         }
     }
 
+    @Override
     int getParameterCount() {
         return 0;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         throw new IndexOutOfBoundsException();
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         throw new IndexOutOfBoundsException();
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return "#noescape";
     }
-        
+
+    @Override
+    boolean isOutputCacheable() {
+        return true;
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
+    }
+    
 }

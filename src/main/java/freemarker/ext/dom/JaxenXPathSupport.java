@@ -44,7 +44,6 @@ import org.xml.sax.EntityResolver;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
-import freemarker.cache.TemplateCache;
 import freemarker.core.CustomAttribute;
 import freemarker.core.Environment;
 import freemarker.template.ObjectWrapper;
@@ -65,6 +64,7 @@ class JaxenXPathSupport implements XPathSupport {
     
     private static final CustomAttribute cache = 
         new CustomAttribute(CustomAttribute.SCOPE_TEMPLATE) {
+            @Override
             protected Object create() {
                 return new HashMap();
             }
@@ -75,8 +75,8 @@ class JaxenXPathSupport implements XPathSupport {
     public TemplateModel executeQuery(Object context, String xpathQuery) throws TemplateModelException {
         try {
             BaseXPath xpath;
-            Map xpathCache = (Map)cache.get();
-            synchronized(xpathCache) {
+            Map xpathCache = (Map) cache.get();
+            synchronized (xpathCache) {
                 xpath = (BaseXPath) xpathCache.get(xpathQuery);
                 if (xpath == null) {
                     xpath = new BaseXPath(xpathQuery, fmDomNavigator);
@@ -95,8 +95,8 @@ class JaxenXPathSupport implements XPathSupport {
             return nlm;
         } catch (UndeclaredThrowableException e) {
             Throwable t  = e.getUndeclaredThrowable();
-            if(t instanceof TemplateModelException) {
-                throw (TemplateModelException)t;
+            if (t instanceof TemplateModelException) {
+                throw (TemplateModelException) t;
             }
             throw e;
         } catch (JaxenException je) {
@@ -116,28 +116,25 @@ class JaxenXPathSupport implements XPathSupport {
 
     private static final VariableContext fmVariableContext = new VariableContext() {
         public Object getVariableValue(String namespaceURI, String prefix, String localName)
-        throws 
-            UnresolvableException
-        {
+        throws UnresolvableException {
             try {
                 TemplateModel model = Environment.getCurrentEnvironment().getVariable(localName);
-                if(model == null) {
+                if (model == null) {
                     throw new UnresolvableException("Variable " + localName + " not found.");
                 }
-                if(model instanceof TemplateScalarModel) {
-                    return ((TemplateScalarModel)model).getAsString();
+                if (model instanceof TemplateScalarModel) {
+                    return ((TemplateScalarModel) model).getAsString();
                 }
-                if(model instanceof TemplateNumberModel) {
-                    return ((TemplateNumberModel)model).getAsNumber();
+                if (model instanceof TemplateNumberModel) {
+                    return ((TemplateNumberModel) model).getAsNumber();
                 }
-                if(model instanceof TemplateDateModel) {
-                    return ((TemplateDateModel)model).getAsDate();
+                if (model instanceof TemplateDateModel) {
+                    return ((TemplateDateModel) model).getAsDate();
                 }
-                if(model instanceof TemplateBooleanModel) {
-                    return Boolean.valueOf(((TemplateBooleanModel)model).getAsBoolean());
+                if (model instanceof TemplateBooleanModel) {
+                    return Boolean.valueOf(((TemplateBooleanModel) model).getAsBoolean());
                 }
-            }
-            catch(TemplateModelException e) {
+            } catch (TemplateModelException e) {
                 throw new UndeclaredThrowableException(e);
             }
             throw new UnresolvableException("Variable " + localName + " is not a string, number, date, or boolean");
@@ -145,12 +142,12 @@ class JaxenXPathSupport implements XPathSupport {
     };
      
     private static final FunctionContext fmFunctionContext = new XPathFunctionContext() {
+        @Override
         public Function getFunction(String namespaceURI, String prefix, String localName)
         throws UnresolvableException {
             try {
                 return super.getFunction(namespaceURI, prefix, localName);
-            } 
-            catch(UnresolvableException e) {
+            } catch (UnresolvableException e) {
                 return super.getFunction(null, null, localName);
             }
         }
@@ -159,13 +156,12 @@ class JaxenXPathSupport implements XPathSupport {
     private static final CustomAttribute cachedTree = new CustomAttribute(CustomAttribute.SCOPE_TEMPLATE);
      
     private static final Navigator fmDomNavigator = new DocumentNavigator() {
-        public Object getDocument(String uri) throws FunctionCallException
-        {
-            try
-            {
+        @Override
+        public Object getDocument(String uri) throws FunctionCallException {
+            try {
                 Template raw = getTemplate(uri);
-                Document doc = (Document)cachedTree.get(raw);
-                if(doc == null) {
+                Document doc = (Document) cachedTree.get(raw);
+                if (doc == null) {
                     DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
                     factory.setNamespaceAware(true);
                     DocumentBuilder builder = factory.newDocumentBuilder();
@@ -174,14 +170,12 @@ class JaxenXPathSupport implements XPathSupport {
                     doc = builder.parse(createInputSource(null, raw));
                     // If the entity resolver got called 0 times, the document
                     // is standalone, so we can safely cache it
-                    if(er.getCallCount() == 0) {
+                    if (er.getCallCount() == 0) {
                         cachedTree.set(doc, raw);
                     }
                 }
                 return doc;
-            }
-            catch (Exception e)
-            {
+            } catch (Exception e) {
                 throw new FunctionCallException("Failed to parse document for URI: " + uri, e);
             }
         }
@@ -196,7 +190,7 @@ class JaxenXPathSupport implements XPathSupport {
         String templatePath = env.getTemplate().getName();
         int lastSlash = templatePath.lastIndexOf('/');
         templatePath = lastSlash == -1 ? "" : templatePath.substring(0, lastSlash + 1);
-        systemId = TemplateCache.getFullTemplatePath(env, templatePath, systemId);
+        systemId = env.toFullTemplateName(templatePath, systemId);
         Template raw = env.getConfiguration().getTemplate(systemId, env.getLocale(), encoding, false);
         return raw;
     }
@@ -205,8 +199,7 @@ class JaxenXPathSupport implements XPathSupport {
         StringWriter sw = new StringWriter();
         try {
             raw.process(Collections.EMPTY_MAP, sw);
-        }
-        catch(TemplateException e) {
+        } catch (TemplateException e) {
             throw new SAXException(e);
         }
         InputSource is = new InputSource();

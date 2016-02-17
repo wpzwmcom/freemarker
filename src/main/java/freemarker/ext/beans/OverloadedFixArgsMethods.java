@@ -19,6 +19,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
+import freemarker.template.ObjectWrapperAndUnwrapper;
 import freemarker.template.TemplateModel;
 import freemarker.template.TemplateModelException;
 
@@ -31,27 +32,30 @@ class OverloadedFixArgsMethods extends OverloadedMethodsSubset {
         super(bugfixed);
     }
 
+    @Override
     Class[] preprocessParameterTypes(CallableMemberDescriptor memberDesc) {
         return memberDesc.getParamTypes();
     }
     
+    @Override
     void afterWideningUnwrappingHints(Class[] paramTypes, int[] paramNumericalTypes) {
         // Do nothing
     }
 
+    @Override
     MaybeEmptyMemberAndArguments getMemberAndArguments(List tmArgs, BeansWrapper unwrapper) 
     throws TemplateModelException {
-        if(tmArgs == null) {
+        if (tmArgs == null) {
             // null is treated as empty args
             tmArgs = Collections.EMPTY_LIST;
         }
         final int argCount = tmArgs.size();
         final Class[][] unwrappingHintsByParamCount = getUnwrappingHintsByParamCount();
-        if(unwrappingHintsByParamCount.length <= argCount) {
+        if (unwrappingHintsByParamCount.length <= argCount) {
             return EmptyMemberAndArguments.WRONG_NUMBER_OF_ARGUMENTS;
         }
         Class[] unwarppingHints = unwrappingHintsByParamCount[argCount];
-        if(unwarppingHints == null) {
+        if (unwarppingHints == null) {
             return EmptyMemberAndArguments.WRONG_NUMBER_OF_ARGUMENTS;
         }
         
@@ -63,19 +67,19 @@ class OverloadedFixArgsMethods extends OverloadedMethodsSubset {
         }
 
         Iterator it = tmArgs.iterator();
-        for(int i = 0; i < argCount; ++i) {
-            Object pojo = unwrapper.tryUnwrap(
+        for (int i = 0; i < argCount; ++i) {
+            Object pojo = unwrapper.tryUnwrapTo(
                     (TemplateModel) it.next(),
                     unwarppingHints[i],
                     typeFlags != null ? typeFlags[i] : 0);
-            if(pojo == BeansWrapper.CAN_NOT_UNWRAP) {
+            if (pojo == ObjectWrapperAndUnwrapper.CANT_UNWRAP_TO_TARGET_CLASS) {
                 return EmptyMemberAndArguments.noCompatibleOverload(i + 1);
             }
             pojoArgs[i] = pojo;
         }
         
         MaybeEmptyCallableMemberDescriptor maybeEmtpyMemberDesc = getMemberDescriptorForArgs(pojoArgs, false);
-        if(maybeEmtpyMemberDesc instanceof CallableMemberDescriptor) {
+        if (maybeEmtpyMemberDesc instanceof CallableMemberDescriptor) {
             CallableMemberDescriptor memberDesc = (CallableMemberDescriptor) maybeEmtpyMemberDesc;
             if (bugfixed) {
                 if (typeFlags != null) {

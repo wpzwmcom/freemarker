@@ -34,10 +34,8 @@ import freemarker.template.utility.UndeclaredThrowableException;
  * A utility class that allows you to connect to the FreeMarker debugger service
  * running on a specific host and port. 
  */
-public class DebuggerClient
-{
-    private DebuggerClient()
-    {
+public class DebuggerClient {
+    private DebuggerClient() {
     }
     
     /**
@@ -57,107 +55,82 @@ public class DebuggerClient
      * @throws IOException if an exception occurs.
      */
     public static Debugger getDebugger(InetAddress host, int port, String password)
-    throws
-        IOException
-    {
-        try
-        {
+    throws IOException {
+        try {
             Socket s = new Socket(host, port);
-            try
-            {
+            try {
                 ObjectOutputStream out = new ObjectOutputStream(s.getOutputStream());
                 ObjectInputStream in = new ObjectInputStream(s.getInputStream());
                 int protocolVersion = in.readInt();
-                if(protocolVersion > 220)
-                {
+                if (protocolVersion > 220) {
                     throw new IOException(
                         "Incompatible protocol version " + protocolVersion + 
                         ". At most 220 was expected.");
                 }
-                byte[] challenge = (byte[])in.readObject();
+                byte[] challenge = (byte[]) in.readObject();
                 MessageDigest md = MessageDigest.getInstance("SHA");
                 md.update(password.getBytes("UTF-8"));
                 md.update(challenge);
                 out.writeObject(md.digest());
-                return new LocalDebuggerProxy((Debugger)in.readObject());
+                return new LocalDebuggerProxy((Debugger) in.readObject());
                 //return (Debugger)in.readObject();
-            }
-            finally
-            {
+            } finally {
                 s.close();
             }
-        }
-        catch(IOException e)
-        {
+        } catch (IOException e) {
             throw e;
-        }
-        catch(Exception e)
-        {
+        } catch (Exception e) {
             throw new UndeclaredThrowableException(e); 
         }
     }
     
-    private static class LocalDebuggerProxy implements Debugger
-    {
+    private static class LocalDebuggerProxy implements Debugger {
         private final Debugger remoteDebugger;
 
-        LocalDebuggerProxy(Debugger remoteDebugger)
-        {
+        LocalDebuggerProxy(Debugger remoteDebugger) {
             this.remoteDebugger = remoteDebugger;
         }
 
-        public void addBreakpoint(Breakpoint breakpoint) throws RemoteException
-        {
+        public void addBreakpoint(Breakpoint breakpoint) throws RemoteException {
             remoteDebugger.addBreakpoint(breakpoint);
         }
 
         public Object addDebuggerListener(DebuggerListener listener) 
-        throws RemoteException
-        {
-            if(listener instanceof RemoteObject)
-            {
+        throws RemoteException {
+            if (listener instanceof RemoteObject) {
                 return remoteDebugger.addDebuggerListener(listener);
-            }
-            else
-            {
+            } else {
                 RmiDebuggerListenerImpl remotableListener = 
                     new RmiDebuggerListenerImpl(listener);
                 return remoteDebugger.addDebuggerListener(remotableListener);
             }
         }
 
-        public List getBreakpoints() throws RemoteException
-        {
+        public List getBreakpoints() throws RemoteException {
             return remoteDebugger.getBreakpoints();
         }
 
-        public List getBreakpoints(String templateName) throws RemoteException
-        {
+        public List getBreakpoints(String templateName) throws RemoteException {
             return remoteDebugger.getBreakpoints(templateName);
         }
 
-        public Collection getSuspendedEnvironments() throws RemoteException
-        {
+        public Collection getSuspendedEnvironments() throws RemoteException {
             return remoteDebugger.getSuspendedEnvironments();
         }
 
-        public void removeBreakpoint(Breakpoint breakpoint) throws RemoteException
-        {
+        public void removeBreakpoint(Breakpoint breakpoint) throws RemoteException {
             remoteDebugger.removeBreakpoint(breakpoint);
         }
 
-        public void removeBreakpoints(String templateName) throws RemoteException
-        {
+        public void removeBreakpoints(String templateName) throws RemoteException {
             remoteDebugger.removeBreakpoints(templateName);
         }
 
-        public void removeBreakpoints() throws RemoteException
-        {
+        public void removeBreakpoints() throws RemoteException {
             remoteDebugger.removeBreakpoints();
         }
 
-        public void removeDebuggerListener(Object id) throws RemoteException
-        {
+        public void removeDebuggerListener(Object id) throws RemoteException {
             remoteDebugger.removeDebuggerListener(id);
         }
     }

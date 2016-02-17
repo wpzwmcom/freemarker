@@ -44,18 +44,17 @@ public class RhinoWrapper extends BeansWrapper {
                     return Undefined.class.getField("instance").get(null);
                 }
             });
-        }
-        catch(RuntimeException e) {
+        } catch (RuntimeException e) {
             throw e;
-        }
-        catch(Exception e) {
+        } catch (Exception e) {
             throw new UndeclaredThrowableException(e);
         }
     }
     
+    @Override
     public TemplateModel wrap(Object obj) throws TemplateModelException {
         // So our existence builtins work as expected.
-        if(obj == UNDEFINED_INSTANCE || obj == UniqueTag.NOT_FOUND) {
+        if (obj == UNDEFINED_INSTANCE || obj == UniqueTag.NOT_FOUND) {
             return null;
         }
         // UniqueTag.NULL_VALUE represents intentionally set null in Rhino, and
@@ -65,18 +64,19 @@ public class RhinoWrapper extends BeansWrapper {
         // converted back to null. However, since this object is available to 
         // any 3rd party Scriptable implementations as well, they might return
         // it, so we'll just be on the safe side, and handle it.
-        if(obj == UniqueTag.NULL_VALUE) {
+        if (obj == UniqueTag.NULL_VALUE) {
             return super.wrap(null);
         }
         // So, say, a JavaAdapter for FreeMarker interfaces works
-        if(obj instanceof Wrapper) {
-            obj = ((Wrapper)obj).unwrap();
+        if (obj instanceof Wrapper) {
+            obj = ((Wrapper) obj).unwrap();
         }
         return super.wrap(obj);
     }
 
+    @Override
     protected ModelFactory getModelFactory(Class clazz) {
-        if(Scriptable.class.isAssignableFrom(clazz)) {
+        if (Scriptable.class.isAssignableFrom(clazz)) {
             return RhinoScriptableModel.FACTORY;
         }
         return super.getModelFactory(clazz);

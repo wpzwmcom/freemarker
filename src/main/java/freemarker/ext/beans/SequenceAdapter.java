@@ -39,20 +39,20 @@ class SequenceAdapter extends AbstractList implements TemplateModelAdapter {
         return model;
     }
     
+    @Override
     public int size() {
         try {
             return model.size();
-        }
-        catch(TemplateModelException e) {
+        } catch (TemplateModelException e) {
             throw new UndeclaredThrowableException(e);
         }
     }
     
+    @Override
     public Object get(int index) {
         try {
             return wrapper.unwrap(model.get(index));
-        }
-        catch(TemplateModelException e) {
+        } catch (TemplateModelException e) {
             throw new UndeclaredThrowableException(e);
         }
     }

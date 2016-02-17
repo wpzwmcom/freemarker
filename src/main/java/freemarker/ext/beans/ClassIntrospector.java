@@ -39,9 +39,9 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import freemarker.core.BugException;
-import freemarker.core._ConcurrentMapFactory;
 import freemarker.ext.beans.BeansWrapper.MethodAppearanceDecision;
 import freemarker.ext.beans.BeansWrapper.MethodAppearanceDecisionInput;
 import freemarker.ext.util.ModelCache;
@@ -51,7 +51,8 @@ import freemarker.template.utility.SecurityUtilities;
 
 /**
  * Returns information about a {@link Class} that's useful for FreeMarker. Encapsulates a cache for this. Thread-safe,
- * doesn't require "proper publishing" starting from Java 5. Immutable, with the exception of the internal caches.
+ * doesn't even require "proper publishing" starting from 2.3.24 or Java 5. Immutable, with the exception of the
+ * internal caches.
  * 
  * <p>
  * Note that instances of this are cached on the level of FreeMarker's defining class loader. Hence, it must not do
@@ -141,9 +142,7 @@ class ClassIntrospector {
     // State fields:
 
     private final Object sharedLock;
-    private final Map/* <Class, Map<String, Object>> */cache = _ConcurrentMapFactory.newMaybeConcurrentHashMap(0,
-            0.75f, 16);
-    private final boolean isCacheConcurrentMap = _ConcurrentMapFactory.isConcurrent(cache);
+    private final Map/* <Class, Map<String, Object>> */cache = new ConcurrentHashMap(0, 0.75f, 16);
     private final Set/* <String> */cacheClassNames = new HashSet(0);
     private final Set/* <Class> */classIntrospectionsInProgress = new HashSet(0);
 
@@ -209,7 +208,7 @@ class ClassIntrospector {
      *         {@link OverloadedMethods} or {@link Field} (but better check the source code...).
      */
     Map get(Class clazz) {
-        if (isCacheConcurrentMap) {
+        {
             Map introspData = (Map) cache.get(clazz);
             if (introspData != null) return introspData;
         }
@@ -306,62 +305,67 @@ class ClassIntrospector {
         BeanInfo beanInfo = Introspector.getBeanInfo(clazz);
 
         PropertyDescriptor[] pda = beanInfo.getPropertyDescriptors();
-        int pdaLength = pda != null ? pda.length : 0;
-        for (int i = pdaLength - 1; i >= 0; --i) {
-            addPropertyDescriptorToClassIntrospectionData(
-                    introspData, pda[i], clazz,
-                    accessibleMethods);
+        if (pda != null) {
+            int pdaLength = pda.length;
+            for (int i = pdaLength - 1; i >= 0; --i) {
+                addPropertyDescriptorToClassIntrospectionData(
+                        introspData, pda[i], clazz,
+                        accessibleMethods);
+            }
         }
 
         if (exposureLevel < BeansWrapper.EXPOSE_PROPERTIES_ONLY) {
             final MethodAppearanceDecision decision = new MethodAppearanceDecision();
             MethodAppearanceDecisionInput decisionInput = null;
             final MethodDescriptor[] mda = sortMethodDescriptors(beanInfo.getMethodDescriptors());
-            int mdaLength = mda != null ? mda.length : 0;
-            for (int i = mdaLength - 1; i >= 0; --i) {
-                final MethodDescriptor md = mda[i];
-                final Method method = getMatchingAccessibleMethod(md.getMethod(), accessibleMethods);
-                if (method != null && isAllowedToExpose(method)) {
-                    decision.setDefaults(method);
-                    if (methodAppearanceFineTuner != null) {
-                        if (decisionInput == null) {
-                            decisionInput = new MethodAppearanceDecisionInput();
+            if (mda != null) {
+                int mdaLength = mda.length;
+                for (int i = mdaLength - 1; i >= 0; --i) {
+                    final MethodDescriptor md = mda[i];
+                    final Method method = getMatchingAccessibleMethod(md.getMethod(), accessibleMethods);
+                    if (method != null && isAllowedToExpose(method)) {
+                        decision.setDefaults(method);
+                        if (methodAppearanceFineTuner != null) {
+                            if (decisionInput == null) {
+                                decisionInput = new MethodAppearanceDecisionInput();
+                            }
+                            decisionInput.setContainingClass(clazz);
+                            decisionInput.setMethod(method);
+    
+                            methodAppearanceFineTuner.process(decisionInput, decision);
                         }
-                        decisionInput.setContainingClass(clazz);
-                        decisionInput.setMethod(method);
-
-                        methodAppearanceFineTuner.process(decisionInput, decision);
-                    }
-
-                    PropertyDescriptor propDesc = decision.getExposeAsProperty();
-                    if (propDesc != null && !(introspData.get(propDesc.getName()) instanceof PropertyDescriptor)) {
-                        addPropertyDescriptorToClassIntrospectionData(introspData, propDesc, clazz, accessibleMethods);
-                    }
-
-                    String methodKey = decision.getExposeMethodAs();
-                    if (methodKey != null) {
-                        Object previous = introspData.get(methodKey);
-                        if (previous instanceof Method) {
-                            // Overloaded method - replace Method with a OverloadedMethods
-                            OverloadedMethods overloadedMethods = new OverloadedMethods(bugfixed);
-                            overloadedMethods.addMethod((Method) previous);
-                            overloadedMethods.addMethod(method);
-                            introspData.put(methodKey, overloadedMethods);
-                            // Remove parameter type information
-                            getArgTypes(introspData).remove(previous);
-                        } else if (previous instanceof OverloadedMethods) {
-                            // Already overloaded method - add new overload
-                            ((OverloadedMethods) previous).addMethod(method);
-                        } else if (decision.getMethodShadowsProperty()
-                                || !(previous instanceof PropertyDescriptor)) {
-                            // Simple method (this far)
-                            introspData.put(methodKey, method);
-                            getArgTypes(introspData).put(method,
-                                    method.getParameterTypes());
+    
+                        PropertyDescriptor propDesc = decision.getExposeAsProperty();
+                        if (propDesc != null && !(introspData.get(propDesc.getName()) instanceof PropertyDescriptor)) {
+                            addPropertyDescriptorToClassIntrospectionData(
+                                    introspData, propDesc, clazz, accessibleMethods);
+                        }
+    
+                        String methodKey = decision.getExposeMethodAs();
+                        if (methodKey != null) {
+                            Object previous = introspData.get(methodKey);
+                            if (previous instanceof Method) {
+                                // Overloaded method - replace Method with a OverloadedMethods
+                                OverloadedMethods overloadedMethods = new OverloadedMethods(bugfixed);
+                                overloadedMethods.addMethod((Method) previous);
+                                overloadedMethods.addMethod(method);
+                                introspData.put(methodKey, overloadedMethods);
+                                // Remove parameter type information
+                                getArgTypes(introspData).remove(previous);
+                            } else if (previous instanceof OverloadedMethods) {
+                                // Already overloaded method - add new overload
+                                ((OverloadedMethods) previous).addMethod(method);
+                            } else if (decision.getMethodShadowsProperty()
+                                    || !(previous instanceof PropertyDescriptor)) {
+                                // Simple method (this far)
+                                introspData.put(methodKey, method);
+                                getArgTypes(introspData).put(method,
+                                        method.getParameterTypes());
+                            }
                         }
                     }
-                }
-            }
+                } // for each in mda
+            } // if mda != null
         } // end if (exposureLevel < EXPOSE_PROPERTIES_ONLY)
     }
 
@@ -506,7 +510,7 @@ class ClassIntrospector {
         if (l == null) {
             return null;
         }
-        for (Iterator iterator = l.iterator(); iterator.hasNext();) {
+        for (Iterator iterator = l.iterator(); iterator.hasNext(); ) {
             Method am = (Method) iterator.next();
             if (am.getReturnType() == m.getReturnType()) {
                 return am;
@@ -561,6 +565,7 @@ class ClassIntrospector {
             this(method.getName(), method.getParameterTypes());
         }
 
+        @Override
         public boolean equals(Object o) {
             if (o instanceof MethodSignature) {
                 MethodSignature ms = (MethodSignature) o;
@@ -569,6 +574,7 @@ class ClassIntrospector {
             return false;
         }
 
+        @Override
         public int hashCode() {
             return name.hashCode() ^ args.length; // TODO That's a poor quality hash... isn't this a problem?
         }
@@ -597,7 +603,7 @@ class ClassIntrospector {
             cacheClassNames.clear();
             clearingCounter++;
 
-            for (Iterator it = modelFactories.iterator(); it.hasNext();) {
+            for (Iterator it = modelFactories.iterator(); it.hasNext(); ) {
                 Object regedMf = ((WeakReference) it.next()).get();
                 if (regedMf != null) {
                     if (regedMf instanceof ClassBasedModelFactory) {
@@ -625,7 +631,7 @@ class ClassIntrospector {
             cacheClassNames.remove(clazz.getName());
             clearingCounter++;
 
-            for (Iterator it = modelFactories.iterator(); it.hasNext();) {
+            for (Iterator it = modelFactories.iterator(); it.hasNext(); ) {
                 Object regedMf = ((WeakReference) it.next()).get();
                 if (regedMf != null) {
                     if (regedMf instanceof ClassBasedModelFactory) {
@@ -694,7 +700,7 @@ class ClassIntrospector {
 
     void unregisterModelFactory(Object mf) {
         synchronized (sharedLock) {
-            for (Iterator it = modelFactories.iterator(); it.hasNext();) {
+            for (Iterator it = modelFactories.iterator(); it.hasNext(); ) {
                 Object regedMf = ((Reference) it.next()).get();
                 if (regedMf == mf) {
                     it.remove();
@@ -708,7 +714,7 @@ class ClassIntrospector {
         Reference cleardRef;
         while ((cleardRef = modelFactoriesRefQueue.poll()) != null) {
             synchronized (sharedLock) {
-                findCleardRef: for (Iterator it = modelFactories.iterator(); it.hasNext();) {
+                findCleardRef: for (Iterator it = modelFactories.iterator(); it.hasNext(); ) {
                     if (it.next() == cleardRef) {
                         it.remove();
                         break findCleardRef;
@@ -787,8 +793,8 @@ class ClassIntrospector {
     }
 
     /**
-     * Almost always, you want to use {@link BeansWrapper#getSharedInrospectionLock()}, not this! The only exception is
-     * when you get this to set the field returned by {@link BeansWrapper#getSharedInrospectionLock()}.
+     * Almost always, you want to use {@link BeansWrapper#getSharedIntrospectionLock()}, not this! The only exception is
+     * when you get this to set the field returned by {@link BeansWrapper#getSharedIntrospectionLock()}.
      */
     Object getSharedLock() {
         return sharedLock;

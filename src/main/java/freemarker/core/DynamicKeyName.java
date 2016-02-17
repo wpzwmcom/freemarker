@@ -44,8 +44,8 @@ final class DynamicKeyName extends Expression {
         this.keyExpression = keyExpression;
     }
 
-    TemplateModel _eval(Environment env) throws TemplateException
-    {
+    @Override
+    TemplateModel _eval(Environment env) throws TemplateException {
         TemplateModel targetModel = target.eval(env);
         if (targetModel == null) {
             if (env.isClassicCompatible()) {
@@ -57,11 +57,10 @@ final class DynamicKeyName extends Expression {
         
         TemplateModel keyModel = keyExpression.eval(env);
         if (keyModel == null) {
-            if(env.isClassicCompatible()) {
+            if (env.isClassicCompatible()) {
                 keyModel = TemplateScalarModel.EMPTY_STRING;
-            }
-            else {
-                keyExpression.assertNonNull(keyModel, env);
+            } else {
+                keyExpression.assertNonNull(null, env);
             }
         }
         if (keyModel instanceof TemplateNumberModel) {
@@ -69,7 +68,7 @@ final class DynamicKeyName extends Expression {
             return dealWithNumericalKey(targetModel, index, env);
         }
         if (keyModel instanceof TemplateScalarModel) {
-            String key = EvalUtil.modelToString((TemplateScalarModel)keyModel, keyExpression, env);
+            String key = EvalUtil.modelToString((TemplateScalarModel) keyModel, keyExpression, env);
             return dealWithStringKey(targetModel, key, env);
         }
         if (keyModel instanceof RangeModel) {
@@ -91,8 +90,7 @@ final class DynamicKeyName extends Expression {
     private TemplateModel dealWithNumericalKey(TemplateModel targetModel, 
                                                int index, 
                                                Environment env)
-        throws TemplateException
-    {
+        throws TemplateException {
         if (targetModel instanceof TemplateSequenceModel) {
             TemplateSequenceModel tsm = (TemplateSequenceModel) targetModel;
             int size;
@@ -104,28 +102,38 @@ final class DynamicKeyName extends Expression {
             return index < size ? tsm.get(index) : null;
         } 
         
-        try
-        {
+        try {
             String s = target.evalAndCoerceToString(env);
             try {
-               return new SimpleScalar(s.substring(index, index + 1));
-            } catch (RuntimeException re) {
-                throw new _MiscTemplateException(re, env);
+                return new SimpleScalar(s.substring(index, index + 1));
+            } catch (IndexOutOfBoundsException e) {
+                if (index < 0) {
+                    throw new _MiscTemplateException("Negative index not allowed: ", Integer.valueOf(index));
+                }
+                if (index >= s.length()) {
+                    throw new _MiscTemplateException(
+                            "String index out of range: The index was ", Integer.valueOf(index),
+                            " (0-based), but the length of the string is only ", Integer.valueOf(s.length()) , ".");
+                }
+                throw new RuntimeException("Can't explain exception", e);
             }
-        }
-        catch(NonStringException e)
-        {
+        } catch (NonStringException e) {
             throw new UnexpectedTypeException(
                     target, targetModel,
                     "sequence or " + NonStringException.STRING_COERCABLE_TYPES_DESC,
-                    NUMERICAL_KEY_LHO_EXPECTED_TYPES, env);
+                    NUMERICAL_KEY_LHO_EXPECTED_TYPES,
+                    (targetModel instanceof TemplateHashModel
+                            ? "You had a numberical value inside the []. Currently that's only supported for "
+                                    + "sequences (lists) and strings. To get a Map item with a non-string key, "
+                                    + "use myMap?api.get(myKey)."
+                            : null),
+                    env);
         }
     }
 
     private TemplateModel dealWithStringKey(TemplateModel targetModel, String key, Environment env)
-        throws TemplateException
-    {
-        if(targetModel instanceof TemplateHashModel) {
+        throws TemplateException {
+        if (targetModel instanceof TemplateHashModel) {
             return((TemplateHashModel) targetModel).get(key);
         }
         throw new NonHashException(target, targetModel, env);
@@ -142,7 +150,7 @@ final class DynamicKeyName extends Expression {
             targetSeq = null;
             try {
                 targetStr = target.evalAndCoerceToString(env);
-            } catch(NonStringException e) {
+            } catch (NonStringException e) {
                 throw new UnexpectedTypeException(
                         target, target.eval(env),
                         "sequence or " + NonStringException.STRING_COERCABLE_TYPES_DESC,
@@ -162,9 +170,9 @@ final class DynamicKeyName extends Expression {
 
         final int firstIdx = range.getBegining();
         if (firstIdx < 0) {
-            throw new _MiscTemplateException(keyExpression, new Object[] {
-                    "Negative range start index (", new Integer(firstIdx),
-                    ") isn't allowed for a range used for slicing." });
+            throw new _MiscTemplateException(keyExpression,
+                    "Negative range start index (", Integer.valueOf(firstIdx),
+                    ") isn't allowed for a range used for slicing.");
         }
         
         final int targetSize = targetStr != null ? targetStr.length() : targetSeq.size();
@@ -176,11 +184,11 @@ final class DynamicKeyName extends Expression {
         // Right-adaptive decreasing ranges has exclusive end -1, so it can't help on a  to high firstIndex. 
         // Right-bounded ranges at this point aren't empty, so the right index surely can't reach targetSize. 
         if (rightAdaptive && step == 1 ? firstIdx > targetSize : firstIdx >= targetSize) {
-            throw new _MiscTemplateException(keyExpression, new Object[] {
-                    "Range start index ", new Integer(firstIdx), " is out of bounds, because the sliced ",
+            throw new _MiscTemplateException(keyExpression,
+                    "Range start index ", Integer.valueOf(firstIdx), " is out of bounds, because the sliced ",
                     (targetStr != null ? "string" : "sequence"),
-                    " has only ", new Integer(targetSize), " ", (targetStr != null ? "character(s)" : "element(s)"),
-                    ". ", "(Note that indices are 0-based)." });
+                    " has only ", Integer.valueOf(targetSize), " ", (targetStr != null ? "character(s)" : "element(s)"),
+                    ". ", "(Note that indices are 0-based).");
         }
         
         final int resultSize;
@@ -188,19 +196,19 @@ final class DynamicKeyName extends Expression {
             final int lastIdx = firstIdx + (size - 1) * step;
             if (lastIdx < 0) {
                 if (!rightAdaptive) {
-                    throw new _MiscTemplateException(keyExpression, new Object[] {
-                            "Negative range end index (", new Integer(lastIdx),
-                            ") isn't allowed for a range used for slicing." });
+                    throw new _MiscTemplateException(keyExpression,
+                            "Negative range end index (", Integer.valueOf(lastIdx),
+                            ") isn't allowed for a range used for slicing.");
                 } else {
                     resultSize = firstIdx + 1;
                 }
             } else if (lastIdx >= targetSize) {
                 if (!rightAdaptive) {
-                    throw new _MiscTemplateException(keyExpression, new Object[] {
-                            "Range end index ", new Integer(lastIdx), " is out of bounds, because the sliced ",
+                    throw new _MiscTemplateException(keyExpression,
+                            "Range end index ", Integer.valueOf(lastIdx), " is out of bounds, because the sliced ",
                             (targetStr != null ? "string" : "sequence"),
-                            " has only ", new Integer(targetSize), " ", (targetStr != null ? "character(s)" : "element(s)"),
-                            ". (Note that indices are 0-based)." });
+                            " has only ", Integer.valueOf(targetSize), " ", (targetStr != null ? "character(s)" : "element(s)"),
+                            ". (Note that indices are 0-based).");
                 } else {
                     resultSize = Math.abs(targetSize - firstIdx);
                 }
@@ -227,12 +235,10 @@ final class DynamicKeyName extends Expression {
             final int exclEndIdx;
             if (step < 0 && resultSize > 1) {
                 if (!(range.isAffactedByStringSlicingBug() && resultSize == 2)) {
-                    throw new _MiscTemplateException(
-                            keyExpression, new Object[] {
-                                "Decreasing ranges aren't allowed for slicing strings (as it would give reversed "
-                                + "text). The index range was: first = ",
-                                new Integer(firstIdx), ", last = ", new Integer(firstIdx + (resultSize - 1) * step)
-                            });
+                    throw new _MiscTemplateException(keyExpression,
+                            "Decreasing ranges aren't allowed for slicing strings (as it would give reversed text). "
+                            + "The index range was: first = ", Integer.valueOf(firstIdx),
+                            ", last = ", Integer.valueOf(firstIdx + (resultSize - 1) * step));
                 } else {
                     // Emulate the legacy bug, where "foo"[n .. n-1] gives "" instead of an error (if n >= 1).  
                     // Fix this in FTL [2.4]
@@ -254,6 +260,7 @@ final class DynamicKeyName extends Expression {
                 : TemplateScalarModel.EMPTY_STRING;
     }
 
+    @Override
     public String getCanonicalForm() {
         return target.getCanonicalForm() 
                + "[" 
@@ -261,26 +268,32 @@ final class DynamicKeyName extends Expression {
                + "]";
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return "...[...]";
     }
     
+    @Override
     boolean isLiteral() {
         return constantValue != null || (target.isLiteral() && keyExpression.isLiteral());
     }
     
+    @Override
     int getParameterCount() {
         return 2;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         return idx == 0 ? target : keyExpression;
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         return idx == 0 ? ParameterRole.LEFT_HAND_OPERAND : ParameterRole.ENCLOSED_OPERAND;
     }
 
+    @Override
     protected Expression deepCloneWithIdentifierReplaced_inner(
             String replacedIdentifier, Expression replacement, ReplacemenetState replacementState) {
     	return new DynamicKeyName(

@@ -23,44 +23,53 @@ import freemarker.template.TemplateException;
 final class RecoveryBlock extends TemplateElement {
     
     RecoveryBlock(TemplateElement block) {
-        this.nestedBlock = block;
+        setNestedBlock(block);
     }
 
-    void accept(Environment env) throws TemplateException, IOException 
-    {
-        if (nestedBlock != null) {
-            env.visitByHiddingParent(nestedBlock);
+    @Override
+    void accept(Environment env) throws TemplateException, IOException {
+        if (getNestedBlock() != null) {
+            env.visitByHiddingParent(getNestedBlock());
         }
     }
 
+    @Override
     protected String dump(boolean canonical) {
         if (canonical) {
-            StringBuffer buf = new StringBuffer();
+            StringBuilder buf = new StringBuilder();
             buf.append('<').append(getNodeTypeSymbol()).append('>');
-            if (nestedBlock != null) {
-                buf.append(nestedBlock.getCanonicalForm());            
+            if (getNestedBlock() != null) {
+                buf.append(getNestedBlock().getCanonicalForm());            
             }
-            buf.append("</").append(getNodeTypeSymbol()).append('>');
             return buf.toString();
         } else {
             return getNodeTypeSymbol();
         }
     }
 
+    @Override
     String getNodeTypeSymbol() {
         return "#recover";
     }
     
+    @Override
     int getParameterCount() {
         return 0;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         throw new IndexOutOfBoundsException();
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         throw new IndexOutOfBoundsException();
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
     }
     
 }

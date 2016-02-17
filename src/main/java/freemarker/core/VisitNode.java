@@ -38,6 +38,7 @@ final class VisitNode extends TemplateElement {
         this.namespaces = namespaces;
     }
 
+    @Override
     void accept(Environment env) throws IOException, TemplateException {
         TemplateModel node = targetNode.eval(env);
         if (!(node instanceof TemplateNodeModel)) {
@@ -47,8 +48,7 @@ final class VisitNode extends TemplateElement {
         TemplateModel nss = namespaces == null ? null : namespaces.eval(env);
         if (namespaces instanceof StringLiteral) {
             nss = env.importLib(((TemplateScalarModel) nss).getAsString(), null);
-        }
-        else if (namespaces instanceof ListLiteral) {
+        } else if (namespaces instanceof ListLiteral) {
             nss = ((ListLiteral) namespaces).evaluateStringsToNamespaces(env);
         }
         if (nss != null) {
@@ -56,8 +56,7 @@ final class VisitNode extends TemplateElement {
                 SimpleSequence ss = new SimpleSequence(1);
                 ss.add(nss);
                 nss = ss;
-            }
-            else if (!(nss instanceof TemplateSequenceModel)) {
+            } else if (!(nss instanceof TemplateSequenceModel)) {
                 if (namespaces != null) {
                     throw new NonSequenceException(namespaces, nss, env);
                 } else {
@@ -66,11 +65,12 @@ final class VisitNode extends TemplateElement {
                 }
             }
         }
-        env.visit((TemplateNodeModel) node, (TemplateSequenceModel) nss);
+        env.invokeNodeHandlerFor((TemplateNodeModel) node, (TemplateSequenceModel) nss);
     }
 
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         if (canonical) sb.append('<');
         sb.append(getNodeTypeSymbol());
         sb.append(' ');
@@ -83,14 +83,17 @@ final class VisitNode extends TemplateElement {
         return sb.toString();
     }
 
+    @Override
     String getNodeTypeSymbol() {
         return "#visit";
     }
     
+    @Override
     int getParameterCount() {
         return 2;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         switch (idx) {
         case 0: return targetNode;
@@ -99,12 +102,18 @@ final class VisitNode extends TemplateElement {
         }
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         switch (idx) {
         case 0: return ParameterRole.NODE;
         case 1: return ParameterRole.NAMESPACE;
         default: throw new IndexOutOfBoundsException();
         }
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return true;
     }
     
 }

@@ -18,19 +18,21 @@ package freemarker.core;
 
 import java.io.IOException;
 
+import freemarker.template.MalformedTemplateNameException;
 import freemarker.template.Template;
 import freemarker.template.TemplateException;
 
-
 /**
- * An instruction that gets another template
- * and processes it within the current template.
+ * <b>Internal API - subject to change:</b> Represents an import via {@code #import}.
+ * 
+ * @deprecated This is an internal FreeMarker API with no backward compatibility guarantees, so you shouldn't depend on
+ *             it.
  */
+@Deprecated
 public final class LibraryLoad extends TemplateElement {
 
-    private Expression templateName;
+    private Expression importedTemplateNameExp;
     private String namespace;
-    private final String templatePath;
 
     /**
      * @param template the template that this <tt>Include</tt> is a part of.
@@ -39,80 +41,68 @@ public final class LibraryLoad extends TemplateElement {
      */
     LibraryLoad(Template template,
             Expression templateName,
-            String namespace)
-    {
+            String namespace) {
         this.namespace = namespace;
-        String templatePath1 = template.getName();
-        if (templatePath1 == null) {
-            // This can be the case if the template wasn't created throuh a TemplateLoader. 
-            templatePath1 = "";
-        }
-        int lastSlash = templatePath1.lastIndexOf('/');
-        templatePath = lastSlash == -1 ? "" : templatePath1.substring(0, lastSlash + 1);
-        this.templateName = templateName;
+        this.importedTemplateNameExp = templateName;
     }
 
+    @Override
     void accept(Environment env) throws TemplateException, IOException {
-        String templateNameString = templateName.evalAndCoerceToString(env);
-        Template importedTemplate;
+        final String importedTemplateName = importedTemplateNameExp.evalAndCoerceToString(env);
+        final String fullImportedTemplateName;
         try {
-            if(!env.isClassicCompatible()) {
-                if (templateNameString.indexOf("://") >0) {
-                    ;
-                }
-                else if(templateNameString.length() > 0 && templateNameString.charAt(0) == '/')  {
-                    int protIndex = templatePath.indexOf("://");
-                    if (protIndex >0) {
-                        templateNameString = templatePath.substring(0, protIndex + 2) + templateNameString;
-                    } else {
-                        templateNameString = templateNameString.substring(1);
-                    }
-                }
-                else {
-                    templateNameString = templatePath + templateNameString;
-                }
-            }
-            importedTemplate = env.getTemplateForImporting(templateNameString);
+            fullImportedTemplateName = env.toFullTemplateName(getTemplate().getName(), importedTemplateName);
+        } catch (MalformedTemplateNameException e) {
+            throw new _MiscTemplateException(e, env,
+                    "Malformed template name ", new _DelayedJQuote(e.getTemplateName()), ":\n",
+                    e.getMalformednessDescription());
         }
-        catch (ParseException pe) {
-            throw new _MiscTemplateException(pe, env, new Object[] {
-                    "Error parsing imported template ", templateNameString });
-        }
-        catch (IOException ioe) {
-            throw new _MiscTemplateException(ioe, env, new Object[] {
-                    "Error reading imported template ", templateNameString });
+        
+        final Template importedTemplate;
+        try {
+            importedTemplate = env.getTemplateForImporting(fullImportedTemplateName);
+        } catch (IOException e) {
+            throw new _MiscTemplateException(e, env,
+                    "Template importing failed (for parameter value ",
+                    new _DelayedJQuote(importedTemplateName),
+                    "):\n", new _DelayedGetMessage(e));
         }
         env.importLib(importedTemplate, namespace);
     }
 
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         if (canonical) buf.append('<');
         buf.append(getNodeTypeSymbol());
         buf.append(' ');
-        buf.append(templateName);
+        buf.append(importedTemplateNameExp.getCanonicalForm());
         buf.append(" as ");
-        buf.append(namespace);
+        buf.append(_CoreStringUtils.toFTLTopLevelTragetIdentifier(namespace));
         if (canonical) buf.append("/>");
         return buf.toString();
     }
 
+    @Override
     String getNodeTypeSymbol() {
         return "#import";
     }
     
+    @Override
     int getParameterCount() {
         return 2;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         switch (idx) {
-        case 0: return templateName;
+        case 0: return importedTemplateNameExp;
         case 1: return namespace;
         default: throw new IndexOutOfBoundsException();
         }
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         switch (idx) {
         case 0: return ParameterRole.TEMPLATE_NAME;
@@ -122,6 +112,11 @@ public final class LibraryLoad extends TemplateElement {
     }    
     
     public String getTemplateName() {
-        return templateName.toString();
+        return importedTemplateNameExp.toString();
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
     }
 }

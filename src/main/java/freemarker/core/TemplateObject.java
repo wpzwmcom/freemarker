@@ -19,10 +19,16 @@ package freemarker.core;
 import freemarker.template.Template;
 
 /**
- * Objects that represent instructions or expressions
- * in the compiled tree representation of the template
- * all descend from this abstract base class.
+ * <b>Internal API - subject to change:</b> Represent a node in the parsed template (either a {@link Expression} or a
+ * {@link TemplateElement}).
+ * 
+ * @see TemplateElement
+ * @see Expression
+ * 
+ * @deprecated This is an internal FreeMarker API with no backward compatibility guarantees, so you shouldn't depend on
+ *             it.
  */
+@Deprecated
 public abstract class TemplateObject {
     
     private Template template;
@@ -34,37 +40,27 @@ public abstract class TemplateObject {
     static final int RUNTIME_EVAL_LINE_DISPLACEMENT = -1000000000;  
 
     final void setLocation(Template template, Token begin, Token end)
-    throws
-        ParseException
-    {
+    throws ParseException {
         setLocation(template, begin.beginColumn, begin.beginLine, end.endColumn, end.endLine);
     }
 
     final void setLocation(Template template, Token begin, TemplateObject end)
-    throws
-        ParseException
-    {
+    throws ParseException {
         setLocation(template, begin.beginColumn, begin.beginLine, end.endColumn, end.endLine);
     }
 
     final void setLocation(Template template, TemplateObject begin, Token end)
-    throws
-        ParseException
-    {
+    throws ParseException {
         setLocation(template, begin.beginColumn, begin.beginLine, end.endColumn, end.endLine);
     }
 
     final void setLocation(Template template, TemplateObject begin, TemplateObject end)
-    throws
-        ParseException
-    {
+    throws ParseException {
         setLocation(template, begin.beginColumn, begin.beginLine, end.endColumn, end.endLine);
     }
 
     void setLocation(Template template, int beginColumn, int beginLine, int endColumn, int endLine)
-    throws
-        ParseException
-    {
+    throws ParseException {
         this.template = template;
         this.beginColumn = beginColumn;
         this.beginLine = beginLine;
@@ -128,6 +124,7 @@ public abstract class TemplateObject {
         return s != null ? s : getCanonicalForm();
     }
 
+    @Override
     public String toString() {
         String s;
     	try {
@@ -159,13 +156,15 @@ public abstract class TemplateObject {
         return true;
     }
 
-    public Template getTemplate()
-    {
+    /**
+     * @deprecated This method will be removed in FreeMarker 2.4 because of architectural changes!
+     */
+    @Deprecated
+    public Template getTemplate() {
         return template;
     }
     
-    TemplateObject copyLocationFrom(TemplateObject from)
-    {
+    TemplateObject copyLocationFrom(TemplateObject from) {
         template = from.template;
         beginColumn = from.beginColumn;
         beginLine = from.beginLine;

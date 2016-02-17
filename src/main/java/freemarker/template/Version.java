@@ -22,8 +22,8 @@ import java.util.Date;
 import freemarker.template.utility.StringUtil;
 
 /**
- * Represents a version number plus the further qualifiers and build into. This is
- * mostly used for representing a FreeMarker version number, but must also be able
+ * Represents a version number plus the further qualifiers and build info. This is
+ * mostly used for representing a FreeMarker version number, but should also be able
  * to parse the version strings of 3rd party libraries.
  * 
  * @see Configuration#getVersion()
@@ -42,7 +42,7 @@ public final class Version implements Serializable {
     private final Date buildDate;
     
     private final int intValue;
-    private String calculatedStringValue;  // not final because it's calculated on demand
+    private volatile String calculatedStringValue;  // not final because it's calculated on demand
     private int hashCode;  // not final because it's calculated on demand
 
     /**
@@ -124,6 +124,24 @@ public final class Version implements Serializable {
     public Version(int major, int minor, int micro) {
         this(major, minor, micro, null, null, null);
     }
+
+    /**
+     * Creates an object based on the {@code int} value that uses the same kind of encoding as {@link #intValue()}.
+     * 
+     * @since 2.3.24
+     */
+    public Version(int intValue) {
+        this.intValue = intValue;
+        
+        this.micro = intValue % 1000;
+        this.minor = (intValue / 1000) % 1000;
+        this.major = intValue / 1000000;
+        
+        this.extraInfo = null;
+        this.gaeCompliant = null;
+        this.buildDate = null;
+        originalStringValue = null;
+    }
     
     public Version(int major, int minor, int micro, String extraInfo, Boolean gaeCompatible, Date buildDate) {
         this.major = major;
@@ -146,19 +164,25 @@ public final class Version implements Serializable {
     
     private String getStringValue() {
         if (originalStringValue != null) return originalStringValue;
-        // Switch to double-check + volatile with Java 5
-        synchronized (this) {
-            if (calculatedStringValue == null) {
-                calculatedStringValue = major + "." + minor + "." + micro;
-                if (extraInfo != null) calculatedStringValue += "-" + extraInfo; 
+        
+        String calculatedStringValue = this.calculatedStringValue;
+        if (calculatedStringValue == null) {
+            synchronized (this) {
+                calculatedStringValue = this.calculatedStringValue;
+                if (calculatedStringValue == null) {
+                    calculatedStringValue = major + "." + minor + "." + micro;
+                    if (extraInfo != null) calculatedStringValue += "-" + extraInfo;
+                    this.calculatedStringValue = calculatedStringValue;
+                }
             }
-            return calculatedStringValue;
         }
+        return calculatedStringValue;
     }
     
     /**
      * Contains the major.minor.micor numbers and the extraInfo part, not the other information.
      */
+    @Override
     public String toString() {
         return getStringValue();
     }
@@ -215,6 +239,7 @@ public final class Version implements Serializable {
         return intValue;
     }
 
+    @Override
     public int hashCode() {
         int r = hashCode;
         if (r != 0) return r;
@@ -233,6 +258,7 @@ public final class Version implements Serializable {
         }
     }
 
+    @Override
     public boolean equals(Object obj) {
         if (this == obj) return true;
         if (obj == null) return false;

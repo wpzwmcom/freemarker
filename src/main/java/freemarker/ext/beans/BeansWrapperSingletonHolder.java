@@ -22,8 +22,9 @@ class BeansWrapperSingletonHolder {
     /**
      * Used in {@link BeansWrapper#getDefaultInstance()}.
      * 
-     * @deprecated
+     * @deprecated Use {@link BeansWrapperBuilder#build()} to get or create singletons.
      */
+    @Deprecated
     static final BeansWrapper INSTANCE = new BeansWrapper();
 
 }

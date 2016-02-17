@@ -17,27 +17,28 @@
 package freemarker.template;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLConnection;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
-import java.util.SortedMap;
-import java.util.TreeMap;
-
-import javax.servlet.ServletContext;
+import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import freemarker.cache.CacheStorage;
 import freemarker.cache.ClassTemplateLoader;
@@ -46,20 +47,39 @@ import freemarker.cache.MruCacheStorage;
 import freemarker.cache.MultiTemplateLoader;
 import freemarker.cache.SoftCacheStorage;
 import freemarker.cache.TemplateCache;
+import freemarker.cache.TemplateCache.MaybeMissingTemplate;
+import freemarker.cache.TemplateConfigurerFactory;
 import freemarker.cache.TemplateLoader;
+import freemarker.cache.TemplateLookupContext;
+import freemarker.cache.TemplateLookupStrategy;
+import freemarker.cache.TemplateNameFormat;
 import freemarker.cache.URLTemplateLoader;
-import freemarker.cache.WebappTemplateLoader;
-import freemarker.cache._CacheAPI;
 import freemarker.core.BugException;
+import freemarker.core.CombinedMarkupOutputFormat;
 import freemarker.core.Configurable;
 import freemarker.core.Environment;
+import freemarker.core.HTMLOutputFormat;
+import freemarker.core.MarkupOutputFormat;
+import freemarker.core.OutputFormat;
 import freemarker.core.ParseException;
-import freemarker.core._ConcurrentMapFactory;
+import freemarker.core.ParserConfiguration;
+import freemarker.core.PlainTextOutputFormat;
+import freemarker.core.RTFOutputFormat;
+import freemarker.core.TemplateConfigurer;
+import freemarker.core.TemplateMarkupOutputModel;
+import freemarker.core.UndefinedOutputFormat;
+import freemarker.core.UnregisteredOutputFormatException;
+import freemarker.core.XMLOutputFormat;
 import freemarker.core._CoreAPI;
+import freemarker.core._DelayedJQuote;
+import freemarker.core._MiscTemplateException;
 import freemarker.core._ObjectBuilderSettingEvaluator;
 import freemarker.core._SettingEvaluationEnvironment;
+import freemarker.core._SortedArraySet;
+import freemarker.core._UnmodifiableCompositeSet;
 import freemarker.ext.beans.BeansWrapper;
 import freemarker.ext.beans.BeansWrapperBuilder;
+import freemarker.log.Logger;
 import freemarker.template.utility.CaptureOutput;
 import freemarker.template.utility.ClassUtil;
 import freemarker.template.utility.Constants;
@@ -87,7 +107,7 @@ import freemarker.template.utility.XmlEscape;
  * 
  * <pre>
  *  // Where the application is initialized; in general you do this ONLY ONCE in the application life-cycle!
- *  Configuration cfg = new Configuration(new Version(X, Y, Z));
+ *  Configuration cfg = new Configuration(VERSION_<i>X</i>_<i>Y</i>_<i>Z</i>));
  *  // Where X, Y, Z enables the not-100%-backward-compatible fixes introduced in
  *  // FreeMarker version X.Y.Z  and earlier (see {@link #Configuration(Version)}).
  *  cfg.set<i>SomeSetting</i>(...);
@@ -101,8 +121,9 @@ import freemarker.template.utility.XmlEscape;
  * <p>A couple of settings that you should not leave on its default value are:
  * <ul>
  *   <li>{@link #setTemplateLoader(TemplateLoader) template_loader}: The default value is deprecated and in fact quite
- *       useless. (Most user can use the convenience methods {@link #setDirectoryForTemplateLoading(File)},
- *       {@link #setClassForTemplateLoading(Class, String)} too.)
+ *       useless. (For the most common cases you can use the convenience methods,
+ *       {@link #setDirectoryForTemplateLoading(File)} and {@link #setClassForTemplateLoading(Class, String)} and
+ *       {@link #setClassLoaderForTemplateLoading(ClassLoader, String)} too.)
  *   <li>{@link #setDefaultEncoding(String) default_encoding}: The default value is system dependent, which makes it
  *       fragile on servers, so it should be set explicitly, like to "UTF-8" nowadays. 
  *   <li>{@link #setTemplateExceptionHandler(TemplateExceptionHandler) template_exception_handler}: For developing
@@ -115,28 +136,232 @@ import freemarker.template.utility.XmlEscape;
  * and you have <b>safely published</b> it (see JSR 133 and related literature) to other threads. Generally, you set
  * everything directly after you have instantiated the {@link Configuration} object, then you don't change the settings
  * anymore, so then it's safe to make it accessible (again, via a "safe publication" technique) from multiple threads.
- * The methods that aren't about modifying setting, like {@link #getTemplate(String)}, are thread-safe.
+ * The methods that aren't for modifying settings, like {@link #getTemplate(String)}, are thread-safe.
  */
-public class Configuration extends Configurable implements Cloneable {
-    private static final String VERSION_PROPERTIES_PATH = "freemarker/version.properties";
-    public static final String DEFAULT_ENCODING_KEY = "default_encoding"; 
-    public static final String LOCALIZED_LOOKUP_KEY = "localized_lookup";
-    public static final String STRICT_SYNTAX_KEY = "strict_syntax";
-    public static final String WHITESPACE_STRIPPING_KEY = "whitespace_stripping";
-    public static final String CACHE_STORAGE_KEY = "cache_storage";
-    public static final String TEMPLATE_UPDATE_DELAY_KEY = "template_update_delay";
-    public static final String AUTO_IMPORT_KEY = "auto_import";
-    public static final String AUTO_INCLUDE_KEY = "auto_include";
-    public static final String TAG_SYNTAX_KEY = "tag_syntax";
-    public static final String TEMPLATE_LOADER_KEY = "template_loader";
+public class Configuration extends Configurable implements Cloneable, ParserConfiguration {
     
-    public static final String INCOMPATIBLE_IMPROVEMENTS = "incompatible_improvements";
-    /** @deprecated Use {@link #INCOMPATIBLE_IMPROVEMENTS} instead. */
+    private static final Logger CACHE_LOG = Logger.getLogger("freemarker.cache");
+    
+    private static final String VERSION_PROPERTIES_PATH = "freemarker/version.properties";
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String DEFAULT_ENCODING_KEY_SNAKE_CASE = "default_encoding"; 
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String DEFAULT_ENCODING_KEY_CAMEL_CASE = "defaultEncoding"; 
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String DEFAULT_ENCODING_KEY = DEFAULT_ENCODING_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String LOCALIZED_LOOKUP_KEY_SNAKE_CASE = "localized_lookup";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String LOCALIZED_LOOKUP_KEY_CAMEL_CASE = "localizedLookup";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String LOCALIZED_LOOKUP_KEY = LOCALIZED_LOOKUP_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String STRICT_SYNTAX_KEY_SNAKE_CASE = "strict_syntax";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String STRICT_SYNTAX_KEY_CAMEL_CASE = "strictSyntax";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String STRICT_SYNTAX_KEY = STRICT_SYNTAX_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String WHITESPACE_STRIPPING_KEY_SNAKE_CASE = "whitespace_stripping";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String WHITESPACE_STRIPPING_KEY_CAMEL_CASE = "whitespaceStripping";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String WHITESPACE_STRIPPING_KEY = WHITESPACE_STRIPPING_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.24 */
+    public static final String OUTPUT_FORMAT_KEY_SNAKE_CASE = "output_format";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.24 */
+    public static final String OUTPUT_FORMAT_KEY_CAMEL_CASE = "outputFormat";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String OUTPUT_FORMAT_KEY = OUTPUT_FORMAT_KEY_SNAKE_CASE;
+
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.24 */
+    public static final String RECOGNIZE_STANDARD_FILE_EXTENSIONS_KEY_SNAKE_CASE = "recognize_standard_file_extensions";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.24 */
+    public static final String RECOGNIZE_STANDARD_FILE_EXTENSIONS_KEY_CAMEL_CASE = "recognizeStandardFileExtensions";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String RECOGNIZE_STANDARD_FILE_EXTENSIONS_KEY
+            = RECOGNIZE_STANDARD_FILE_EXTENSIONS_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.24 */
+    public static final String REGISTERED_CUSTOM_OUTPUT_FORMATS_KEY_SNAKE_CASE = "registered_custom_output_formats";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.24 */
+    public static final String REGISTERED_CUSTOM_OUTPUT_FORMATS_KEY_CAMEL_CASE = "registeredCustomOutputFormats";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String REGISTERED_CUSTOM_OUTPUT_FORMATS_KEY = REGISTERED_CUSTOM_OUTPUT_FORMATS_KEY_SNAKE_CASE;
+
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.24 */
+    public static final String AUTO_ESCAPING_POLICY_KEY_SNAKE_CASE = "auto_escaping_policy";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.24 */
+    public static final String AUTO_ESCAPING_POLICY_KEY_CAMEL_CASE = "autoEscapingPolicy";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String AUTO_ESCAPING_POLICY_KEY = AUTO_ESCAPING_POLICY_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String CACHE_STORAGE_KEY_SNAKE_CASE = "cache_storage";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String CACHE_STORAGE_KEY_CAMEL_CASE = "cacheStorage";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String CACHE_STORAGE_KEY = CACHE_STORAGE_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String TEMPLATE_UPDATE_DELAY_KEY_SNAKE_CASE = "template_update_delay";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String TEMPLATE_UPDATE_DELAY_KEY_CAMEL_CASE = "templateUpdateDelay";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String TEMPLATE_UPDATE_DELAY_KEY = TEMPLATE_UPDATE_DELAY_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String AUTO_IMPORT_KEY_SNAKE_CASE = "auto_import";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String AUTO_IMPORT_KEY_CAMEL_CASE = "autoImport";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String AUTO_IMPORT_KEY = AUTO_IMPORT_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String AUTO_INCLUDE_KEY_SNAKE_CASE = "auto_include";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String AUTO_INCLUDE_KEY_CAMEL_CASE = "autoInclude";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String AUTO_INCLUDE_KEY = AUTO_INCLUDE_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String TAG_SYNTAX_KEY_SNAKE_CASE = "tag_syntax";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String TAG_SYNTAX_KEY_CAMEL_CASE = "tagSyntax";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String TAG_SYNTAX_KEY = TAG_SYNTAX_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String NAMING_CONVENTION_KEY_SNAKE_CASE = "naming_convention";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String NAMING_CONVENTION_KEY_CAMEL_CASE = "namingConvention";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String NAMING_CONVENTION_KEY = NAMING_CONVENTION_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String TEMPLATE_LOADER_KEY_SNAKE_CASE = "template_loader";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String TEMPLATE_LOADER_KEY_CAMEL_CASE = "templateLoader";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String TEMPLATE_LOADER_KEY = TEMPLATE_LOADER_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String TEMPLATE_LOOKUP_STRATEGY_KEY_SNAKE_CASE = "template_lookup_strategy";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String TEMPLATE_LOOKUP_STRATEGY_KEY_CAMEL_CASE = "templateLookupStrategy";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String TEMPLATE_LOOKUP_STRATEGY_KEY = TEMPLATE_LOOKUP_STRATEGY_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String TEMPLATE_NAME_FORMAT_KEY_SNAKE_CASE = "template_name_format";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String TEMPLATE_NAME_FORMAT_KEY_CAMEL_CASE = "templateNameFormat";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String TEMPLATE_NAME_FORMAT_KEY = TEMPLATE_NAME_FORMAT_KEY_SNAKE_CASE;
+
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.24 */
+    public static final String TEMPLATE_CONFIGURERS_KEY_SNAKE_CASE = "template_configurers";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.24 */
+    public static final String TEMPLATE_CONFIGURERS_KEY_CAMEL_CASE = "templateConfigurers";
+    /** Alias to the {@code ..._SNAKE_CASE} variation. @since 2.3.24 */
+    public static final String TEMPLATE_CONFIGURERS_KEY = TEMPLATE_CONFIGURERS_KEY_SNAKE_CASE;
+    
+    /** Legacy, snake case ({@code like_this}) variation of the setting name. @since 2.3.23 */
+    public static final String INCOMPATIBLE_IMPROVEMENTS_KEY_SNAKE_CASE = "incompatible_improvements";
+    /** Modern, camel case ({@code likeThis}) variation of the setting name. @since 2.3.23 */
+    public static final String INCOMPATIBLE_IMPROVEMENTS_KEY_CAMEL_CASE = "incompatibleImprovements";
+    /** Alias to the {@code ..._SNAKE_CASE} variation due to backward compatibility constraints. */
+    public static final String INCOMPATIBLE_IMPROVEMENTS_KEY = INCOMPATIBLE_IMPROVEMENTS_KEY_SNAKE_CASE;
+    
+    /** @deprecated Use {@link #INCOMPATIBLE_IMPROVEMENTS_KEY} instead. */
+    @Deprecated
+    public static final String INCOMPATIBLE_IMPROVEMENTS = INCOMPATIBLE_IMPROVEMENTS_KEY_SNAKE_CASE;
+    /** @deprecated Use {@link #INCOMPATIBLE_IMPROVEMENTS_KEY} instead. */
+    @Deprecated
     public static final String INCOMPATIBLE_ENHANCEMENTS = "incompatible_enhancements";
+    
+    private static final String[] SETTING_NAMES_SNAKE_CASE = new String[] {
+        // Must be sorted alphabetically!
+        AUTO_ESCAPING_POLICY_KEY_SNAKE_CASE,
+        AUTO_IMPORT_KEY_SNAKE_CASE,
+        AUTO_INCLUDE_KEY_SNAKE_CASE,
+        CACHE_STORAGE_KEY_SNAKE_CASE,
+        DEFAULT_ENCODING_KEY_SNAKE_CASE,
+        INCOMPATIBLE_IMPROVEMENTS_KEY_SNAKE_CASE,
+        LOCALIZED_LOOKUP_KEY_SNAKE_CASE,
+        NAMING_CONVENTION_KEY_SNAKE_CASE,
+        OUTPUT_FORMAT_KEY_SNAKE_CASE,
+        RECOGNIZE_STANDARD_FILE_EXTENSIONS_KEY_SNAKE_CASE,
+        REGISTERED_CUSTOM_OUTPUT_FORMATS_KEY_SNAKE_CASE,
+        STRICT_SYNTAX_KEY_SNAKE_CASE,
+        TAG_SYNTAX_KEY_SNAKE_CASE,
+        TEMPLATE_CONFIGURERS_KEY_SNAKE_CASE,
+        TEMPLATE_LOADER_KEY_SNAKE_CASE,
+        TEMPLATE_LOOKUP_STRATEGY_KEY_SNAKE_CASE,
+        TEMPLATE_NAME_FORMAT_KEY_SNAKE_CASE,
+        TEMPLATE_UPDATE_DELAY_KEY_SNAKE_CASE,
+        WHITESPACE_STRIPPING_KEY_SNAKE_CASE,
+    };
+
+    private static final String[] SETTING_NAMES_CAMEL_CASE = new String[] {
+        // Must be sorted alphabetically!
+        AUTO_ESCAPING_POLICY_KEY_CAMEL_CASE,
+        AUTO_IMPORT_KEY_CAMEL_CASE,
+        AUTO_INCLUDE_KEY_CAMEL_CASE,
+        CACHE_STORAGE_KEY_CAMEL_CASE,
+        DEFAULT_ENCODING_KEY_CAMEL_CASE,
+        INCOMPATIBLE_IMPROVEMENTS_KEY_CAMEL_CASE,
+        LOCALIZED_LOOKUP_KEY_CAMEL_CASE,
+        NAMING_CONVENTION_KEY_CAMEL_CASE,
+        OUTPUT_FORMAT_KEY_CAMEL_CASE,
+        RECOGNIZE_STANDARD_FILE_EXTENSIONS_KEY_CAMEL_CASE,
+        REGISTERED_CUSTOM_OUTPUT_FORMATS_KEY_CAMEL_CASE,
+        STRICT_SYNTAX_KEY_CAMEL_CASE,
+        TAG_SYNTAX_KEY_CAMEL_CASE,
+        TEMPLATE_CONFIGURERS_KEY_CAMEL_CASE,
+        TEMPLATE_LOADER_KEY_CAMEL_CASE,
+        TEMPLATE_LOOKUP_STRATEGY_KEY_CAMEL_CASE,
+        TEMPLATE_NAME_FORMAT_KEY_CAMEL_CASE,
+        TEMPLATE_UPDATE_DELAY_KEY_CAMEL_CASE,
+        WHITESPACE_STRIPPING_KEY_CAMEL_CASE
+    };
+    
+    private static final Map<String, OutputFormat> STANDARD_OUTPUT_FORMATS;
+    static {
+        STANDARD_OUTPUT_FORMATS = new HashMap<String, OutputFormat>();
+        STANDARD_OUTPUT_FORMATS.put(UndefinedOutputFormat.INSTANCE.getName(), UndefinedOutputFormat.INSTANCE);
+        STANDARD_OUTPUT_FORMATS.put(HTMLOutputFormat.INSTANCE.getName(), HTMLOutputFormat.INSTANCE);
+        STANDARD_OUTPUT_FORMATS.put(XMLOutputFormat.INSTANCE.getName(), XMLOutputFormat.INSTANCE);
+        STANDARD_OUTPUT_FORMATS.put(RTFOutputFormat.INSTANCE.getName(), RTFOutputFormat.INSTANCE);
+        STANDARD_OUTPUT_FORMATS.put(PlainTextOutputFormat.INSTANCE.getName(), PlainTextOutputFormat.INSTANCE);
+    }
+    
     public static final int AUTO_DETECT_TAG_SYNTAX = 0;
     public static final int ANGLE_BRACKET_TAG_SYNTAX = 1;
     public static final int SQUARE_BRACKET_TAG_SYNTAX = 2;
 
+    public static final int AUTO_DETECT_NAMING_CONVENTION = 10;
+    public static final int LEGACY_NAMING_CONVENTION = 11;
+    public static final int CAMEL_CASE_NAMING_CONVENTION = 12;
+
+    /**
+     * Don't enable auto-escaping, regardless of what the {@link OutputFormat} is. Note that a {@code 
+     * <#ftl auto_esc=true>} in the template will override this.
+     */
+    public static final int DISABLE_AUTO_ESCAPING_POLICY = 20;
+    /**
+     * Enable auto-escaping if the output format supports it and {@link MarkupOutputFormat#isAutoEscapedByDefault()} is
+     * {@code true}.
+     */
+    public static final int ENABLE_IF_DEFAULT_AUTO_ESCAPING_POLICY = 21;
+    /** Enable auto-escaping if the {@link OutputFormat} supports it. */
+    public static final int ENABLE_IF_SUPPORTED_AUTO_ESCAPING_POLICY = 22;
+    
     /** FreeMarker version 2.3.0 (an {@link #Configuration(Version) incompatible improvements break-point}) */
     public static final Version VERSION_2_3_0 = new Version(2, 3, 0);
     
@@ -148,15 +373,29 @@ public class Configuration extends Configurable implements Cloneable {
     
     /** FreeMarker version 2.3.21 (an {@link #Configuration(Version) incompatible improvements break-point}) */
     public static final Version VERSION_2_3_21 = new Version(2, 3, 21);
-    
-    /** The default of {@link #getIncompatibleImprovements()}, currently {@code new Version(2, 3, 0)}. */
+
+    /** FreeMarker version 2.3.22 (an {@link #Configuration(Version) incompatible improvements break-point}) */
+    public static final Version VERSION_2_3_22 = new Version(2, 3, 22);
+
+    /** FreeMarker version 2.3.23 (an {@link #Configuration(Version) incompatible improvements break-point}) */
+    public static final Version VERSION_2_3_23 = new Version(2, 3, 23);
+
+    /** FreeMarker version 2.3.24 (an {@link #Configuration(Version) incompatible improvements break-point}) */
+    public static final Version VERSION_2_3_24 = new Version(2, 3, 24);
+
+    /** The default of {@link #getIncompatibleImprovements()}, currently {@link #VERSION_2_3_0}. */
     public static final Version DEFAULT_INCOMPATIBLE_IMPROVEMENTS = Configuration.VERSION_2_3_0;
     /** @deprecated Use {@link #DEFAULT_INCOMPATIBLE_IMPROVEMENTS} instead. */
+    @Deprecated
     public static final String DEFAULT_INCOMPATIBLE_ENHANCEMENTS = DEFAULT_INCOMPATIBLE_IMPROVEMENTS.toString();
     /** @deprecated Use {@link #DEFAULT_INCOMPATIBLE_IMPROVEMENTS} instead. */
+    @Deprecated
     public static final int PARSED_DEFAULT_INCOMPATIBLE_ENHANCEMENTS = DEFAULT_INCOMPATIBLE_IMPROVEMENTS.intValue(); 
     
-    private static final Version version;
+    private static final String NULL = "null";
+    private static final String DEFAULT = "default";
+    
+    private static final Version VERSION;
     static {
         try {
             Properties vp = new Properties();
@@ -188,29 +427,60 @@ public class Configuration extends Configurable implements Cloneable {
                 
                 final Boolean gaeCompliant = Boolean.valueOf(getRequiredVersionProperty(vp, "isGAECompliant"));
                 
-                version = new Version(versionString, gaeCompliant, buildDate);
+                VERSION = new Version(versionString, gaeCompliant, buildDate);
             }
         } catch (IOException e) {
             throw new RuntimeException("Failed to load and parse " + VERSION_PROPERTIES_PATH, e);
         }
     }
     
+    private static final String FM_24_DETECTION_CLASS_NAME = "freemarker.core._2_4_OrLaterMarker";
+    private static final boolean FM_24_DETECTED;
+    static {
+        boolean fm24detected;
+        try {
+            Class.forName(FM_24_DETECTION_CLASS_NAME);
+            fm24detected = true;
+        } catch (ClassNotFoundException e) {
+            fm24detected = false;
+        } catch (LinkageError e) {
+            fm24detected = true;
+        } catch (Throwable e) {
+            // Unexpected. We assume that there's no clash.
+            fm24detected = false;
+        }
+        FM_24_DETECTED = fm24detected;
+    }
+    
     private final static Object defaultConfigLock = new Object();
-    private static Configuration defaultConfig;
+
+    private static volatile Configuration defaultConfig;
 
     private boolean strictSyntax = true;
     private volatile boolean localizedLookup = true;
     private boolean whitespaceStripping = true;
+    private int autoEscapingPolicy = ENABLE_IF_DEFAULT_AUTO_ESCAPING_POLICY;
+    private OutputFormat outputFormat = UndefinedOutputFormat.INSTANCE;
+    private boolean outputFormatExplicitlySet;
+    private Boolean recognizeStandardFileExtensions;
+    private Map<String, ? extends OutputFormat> registeredCustomOutputFormats = Collections.emptyMap(); 
     private Version incompatibleImprovements;
     private int tagSyntax = ANGLE_BRACKET_TAG_SYNTAX;
+    private int namingConvention = AUTO_DETECT_NAMING_CONVENTION;
 
     private TemplateCache cache;
-    private boolean templateLoaderWasSet;
-
-    private boolean objectWrapperWasSet;
+    
+    private boolean templateLoaderExplicitlySet;
+    private boolean templateLookupStrategyExplicitlySet;
+    private boolean templateNameFormatExplicitlySet;
+    private boolean cacheStorageExplicitlySet;
+    
+    private boolean objectWrapperExplicitlySet;
+    private boolean templateExceptionHandlerExplicitlySet;
+    private boolean logTemplateExceptionsExplicitlySet;
     
     private HashMap/*<String, TemplateModel>*/ sharedVariables = new HashMap();
-    
+
     /**
      * Needed so that it doesn't mater in what order do you call {@link #setSharedVaribles(Map)}
      * and {@link #setObjectWrapper(ObjectWrapper)}. When the user configures FreeMarker from Spring XML, he has no
@@ -218,17 +488,18 @@ public class Configuration extends Configurable implements Cloneable {
      */
     private HashMap/*<String, Object>*/ rewrappableSharedVariables = null;
     
-    private String defaultEncoding = SecurityUtilities.getSystemProperty("file.encoding");
-    private Map localeToCharsetMap = _ConcurrentMapFactory.newThreadSafeMap();
+    private String defaultEncoding = SecurityUtilities.getSystemProperty("file.encoding", "utf-8");
+    private ConcurrentMap localeToCharsetMap = new ConcurrentHashMap();
     
-    private ArrayList autoImports = new ArrayList(), autoIncludes = new ArrayList(); 
-    private Map autoImportNsToTmpMap = new HashMap();   // TODO No need for this, instead use List<NamespaceToTemplate> below.
+    private LinkedHashMap<String, String> autoImports = new LinkedHashMap<String, String>(0);
+    private ArrayList<String> autoIncludes = new ArrayList<String>(0);
 
     /**
      * @deprecated Use {@link #Configuration(Version)} instead. Note that the version can be still modified later with
      *     {@link Configuration#setIncompatibleImprovements(Version)} (or
      *     {@link Configuration#setSettings(Properties)}).  
      */
+    @Deprecated
     public Configuration() {
         this(DEFAULT_INCOMPATIBLE_IMPROVEMENTS);
     }
@@ -240,25 +511,31 @@ public class Configuration extends Configurable implements Cloneable {
      *
      * <p><b>About the "incompatible improvements" setting</b>
      *
-     * <p>The setting value is the FreeMarker version number where the bugfixes/improvements to enable were already
-     * implemented (but possibly wasn't active by default, as that would break backward-compatibility).
+     * <p>This setting value is the FreeMarker version number where the not 100% backward compatible bug fixes and
+     * improvements that you want to enable were already implemented. In new projects you should set this to the
+     * FreeMarker version that you are actually using. In older projects it's also usually better to keep this high,
+     * however you better check the changes activated (find them below), at least if not only the 3rd version number
+     * (the micro version) of {@code incompatibleImprovements} is increased. Generally, as far as you only increase the
+     * last version number of this setting, the changes are always low risk. The default value is 2.3.0 to maximize
+     * backward compatibility, but that value isn't recommended.
      * 
-     * <p>The default value is 2.3.0 for maximum backward-compatibility when upgrading {@code freemkarer.jar} under an
-     * existing application. But if you develop a new application with, say, 2.3.21, it's probably a good idea to set
-     * this from 2.3.0 to 2.3.21. As far as the 1st and 2nd version number remains, these changes are always very
-     * low-risk changes, so usually they don't break anything in older applications either.
+     * <p>Bugfixes and improvements that are fully backward compatible, also those that are important security fixes,
+     * are enabled regardless of the incompatible improvements setting.
      * 
-     * <p>This setting doesn't affect some important non-backward compatible security fixes; they are always
-     * enabled, regardless of what you set here.
+     * <p>An important consequence of setting this setting is that now your application will check if the stated minimum
+     * FreeMarker version requirement is met. Like if you set this setting to 2.3.22, but accidentally the application
+     * is deployed with FreeMarker 2.3.21, then FreeMarker will fail, telling that a higher version is required. After
+     * all, the fixes/improvements you have requested aren't available on a lower version.
      * 
-     * <p>Incrementing this setting is a good way of preparing for the next minor (2nd) or major (1st) version number
-     * increases. When that happens, it's possible that some old behavior become unsupported, that is, even if you
-     * set this setting to a low value, it might wont bring back the old behavior anymore.
+     * <p>Note that as FreeMarker's minor (2nd) or major (1st) version number increments, it's possible that emulating
+     * some of the old bugs will become unsupported, that is, even if you set this setting to a low value, it silently
+     * wont bring back the old behavior anymore. Information about that will be present here.
      * 
      * <p>Currently the effects of this setting are:
      * <ul>
      *   <li><p>
-     *     2.3.0: This is the lowest supported value, the version used in older projects.
+     *     2.3.0: This is the lowest supported value, the version used in older projects. This is the default in the
+     *     FreeMarker 2.3.x series.
      *   </li>
      *   <li><p>
      *     2.3.19 (or higher): Bug fix: Wrong {@code #} tags were printed as static text instead of
@@ -268,8 +545,8 @@ public class Configuration extends Configurable implements Cloneable {
      *   <li><p>
      *     2.3.20 (or higher): {@code ?html} will escape apostrophe-quotes just like {@code ?xhtml} does. Utilizing
      *     this is highly recommended, because otherwise if interpolations are used inside attribute values that use
-     *     apostrophe-quotation (<tt>&lt;foo bar='${val}'></tt>) instead of plain quotation mark
-     *     (<tt>&lt;foo bar="${val}"></tt>), they might produce HTML/XML that's not well-formed. Note that
+     *     apostrophe-quotation (<tt>&lt;foo bar='${val}'&gt;</tt>) instead of plain quotation mark
+     *     (<tt>&lt;foo bar="${val}"&gt;</tt>), they might produce HTML/XML that's not well-formed. Note that
      *     {@code ?html} didn't do this because long ago there was no cross-browser way of doing this, but it's not a
      *     concern anymore.
      *   </li>
@@ -279,7 +556,7 @@ public class Configuration extends Configurable implements Cloneable {
      *       <li><p>
      *         The <em>default</em> of the {@code object_wrapper} setting ({@link #getObjectWrapper()}) changes from
      *         {@link ObjectWrapper#DEFAULT_WRAPPER} to another almost identical {@link DefaultObjectWrapper} singleton,
-     *         returned by {@link DefaultObjectWrapperBuilder#getResult()}. The new default object wrapper's
+     *         returned by {@link DefaultObjectWrapperBuilder#build()}. The new default object wrapper's
      *         "incompatible improvements" version is set to the same as of the {@link Configuration}.
      *         See {@link BeansWrapper#BeansWrapper(Version)} for further details. Furthermore, the new default
      *         object wrapper doesn't allow changing its settings; setter methods throw {@link IllegalStateException}).
@@ -338,17 +615,149 @@ public class Configuration extends Configurable implements Cloneable {
      *          is in theory backward compatible, as the API only promises to give something that implements
      *          {@link TemplateSequenceModel}.
      *       </li>
+     *       <li><p>
+     *          Unclosed comments ({@code <#-- ...}) and {@code #noparse}-s won't be silently closed at the end of
+     *          template anymore, but cause a parsing error instead.
+     *       </li>
+     *     </ul>
+     *   </li>
+     *   <li><p>
+     *     2.3.22 (or higher):
+     *     <ul>
+     *       <li><p>
+     *          {@link DefaultObjectWrapper} has some substantial changes with {@code incompatibleImprovements} 2.3.22;
+     *          check them out at {@link DefaultObjectWrapper#DefaultObjectWrapper(Version)}. It's important to know
+     *          that if you set the {@code object_wrapper} setting (to an other value than {@code "default"}), rather
+     *          than leaving it on its default value, the {@code object_wrapper} won't inherit the
+     *          {@code incompatibleImprovements} of the {@link Configuration}. In that case, if you want the 2.3.22
+     *          improvements of {@link DefaultObjectWrapper}, you have to set it in the {@link DefaultObjectWrapper}
+     *          object itself too! (Note that it's OK to use a {@link DefaultObjectWrapper} with a different
+     *          {@code incompatibleImprovements} version number than that of the {@link Configuration}, if that's
+     *          really what you want.)
+     *       </li>
+     *       <li><p>
+     *          In templates, {@code .template_name} will <em>always</em> return the main (top level) template's name.
+     *          It won't be affected by {@code #include} and {@code #nested} anymore. This is unintended, a bug with
+     *          {@code incompatible_improvement} 2.3.22 (a consequence of the lower level fixing described in the next
+     *          point). The old behavior of {@code .template_name} is restored if you set
+     *          {@code incompatible_improvement} to 2.3.23 (while {@link Configurable#getParent()}) of
+     *          {@link Environment} keeps the changed behavior shown in the next point). 
+     *       </li>
+     *       <li><p>
+     *          {@code #include} and {@code #nested} doesn't change the parent {@link Template} (see
+     *          {@link Configurable#getParent()}) of the {@link Environment} anymore to the {@link Template} that's
+     *          included or whose namespace {@code #nested} "returns" to. Thus, the parent of {@link Environment} will
+     *          be now always the main {@link Template}. (The main {@link Template} is the {@link Template} whose
+     *          {@code process} or {@code createProcessingEnvironment} method was called to initiate the output
+     *          generation.) Note that apart from the effect on FTL's {@code .template_name} (see
+     *          previous point), this should only matter if you have set settings directly on {@link Template} objects,
+     *          and almost nobody does that. Also note that macro calls have never changed the {@link Environment}
+     *          parent to the {@link Template} that contains the macro definition, so this mechanism was always broken.
+     *          As now we consistently never change the parent, the behavior when calling macros didn't change.
+     *       </li>
+     *       <li><p>
+     *          When using {@code freemarker.ext.servlet.FreemarkerServlet}:
+     *          <ul>
+     *             <li>
+     *               <p>When using custom JSP tag libraries: Fixes bug where some kind of
+     *               values, when put into the JSP <em>page</em> scope (via {@code #global} or via the JSP
+     *               {@code PageContext} API) and later read back with the JSP {@code PageContext} API (typically in a
+     *               custom JSP tag), might come back as FreeMarker {@link TemplateModel} objects instead of as objects
+     *               with a standard Java type. Other Servlet scopes aren't affected. It's highly unlikely that
+     *               something expects the presence of this bug. The affected values are of the FTL types listed below,
+     *               and to trigger the bug, they either had to be created directly in the template (like as an FTL
+     *               literal or with {@code ?date}/{@code time}/{@code datetime}), or you had to use
+     *               {@link DefaultObjectWrapper} or {@link SimpleObjectWrapper} (or a subclass of them):
+     *               
+     *               <ul>
+     *                 <li>FTL date/time/date-time values may came back as {@link SimpleDate}-s, now they come back as
+     *                 {@link java.util.Date java.util.Date}-s instead.</li>
+     *             
+     *                 <li>FTL sequence values may came back as {@link SimpleSequence}-s, now they come back as
+     *                 {@link java.util.List}-s as expected. This at least stands assuming that the
+     *                 {@link Configuration#setSetting(String, String) object_wrapper} configuration setting is a
+     *                 subclass of {@link BeansWrapper} (such as {@link DefaultObjectWrapper}, which is the default),
+     *                 but that's practically always the case in applications that use FreeMarker's JSP extension
+     *                 (otherwise it can still work, but it depends on the quality and capabilities of the
+     *                 {@link ObjectWrapper} implementation).</li>
+     *             
+     *                 <li>FTL hash values may came back as {@link SimpleHash}-es, now they come back as
+     *                 {@link java.util.Map}-s as expected (again, assuming that the object wrapper is a subclass of
+     *                 {@link BeansWrapper}, like preferably {@link DefaultObjectWrapper}, which is also the default).
+     *                 </li>
+     *             
+     *                 <li>FTL collection values may came back as {@link SimpleCollection}-s, now they come back as
+     *                 {@link java.util.Collection}-s as expected (again, assuming that the object wrapper is a subclass
+     *                 of {@link BeansWrapper}, like preferably {@link DefaultObjectWrapper}).</li>
+     *               </ul>
+     *             </li>
+     *             <li><p>
+     *               Initial {@code "["} in the {@code TemplatePath} init-param
+     *               has special meaning; it's used for specifying multiple comma separated locations, like in
+     *               {@code <param-value>[ WEB-INF/templates, classpath:com/example/myapp/templates ]</param-value>}
+     *             </li>
+     *             <li><p>
+     *               Initial <tt>"{"</tt> in the {@code TemplatePath} init-param is reserved for future purposes, and
+     *               thus will throw exception.
+     *             </li>
+     *          </ul>
+     *       </li>
+     *     </ul>
+     *   </li>
+     *   <li><p>
+     *     2.3.23 (or higher):
+     *     <ul>
+     *       <li><p>
+     *          Fixed a loophole in the implementation of the long existing parse-time rule that says that
+     *          {@code #break}, in the FTL source code itself, must occur nested inside a breakable directive, such as
+     *          {@code #list} or {@code #switch}. This check could be circumvented with {@code #macro} or
+     *          {@code #function}, like this:
+     *          {@code <#list 1..1 as x><#macro callMeLater><#break></#macro></#list><@callMeLater />}.
+     *          After activating this fix, this will be a parse time error.
+     *       </li>
+     *       <li><p>
+     *          If you have used {@code incompatible_improvements} 2.3.22 earlier, know that there the behavior of the
+     *          {@code .template_name} special variable used in templates was accidentally altered, but now it's
+     *          restored to be backward compatible with 2.3.0. (Ironically, the restored legacy behavior itself is
+     *          broken when it comes to macro invocations, we just keep it for backward compatibility. If you need fixed
+     *          behavior, use {@code .current_template_name} or {@code .main_template_name} instead.)
+     *       </li>
+     *     </ul>
+     *   </li>
+     *   <li><p>
+     *     2.3.24 (or higher):
+     *     <ul>
+     *       <li><p>
+     *          The default of the
+     *          {@link #setRecognizeStandardFileExtensions(boolean) recognize_standard_file_extensions}
+     *          setting changes to {@code true}, which means that templates whose name ends with {@code ".ftlh"} or
+     *          {@code ".ftlx"} will automatically get {@link HTMLOutputFormat#INSTANCE} or
+     *          {@link XMLOutputFormat#INSTANCE} output format respectively, in both cases with
+     *          {@link #ENABLE_IF_DEFAULT_AUTO_ESCAPING_POLICY} {@link #setAutoEscapingPolicy(int) auto_escaping_policy}.
+     *          These "file" extensions aren't case sensitive.
+     *       </li>
+     *       <li><p>
+     *          Expressions inside interpolations that were inside <em>string literal expressions</em>
+     *          (not <code>${...}</code>-s in general), like in <code>&lt;#assign s="Hello ${name}!"&gt;</code>, has
+     *          always used {@code incompatbileImprovement}-s 0 (2.3.0 in effect).
+     *       </li>
      *     </ul>
      *   </li>
      * </ul>
      * 
-     * @throws IllegalArgumentException if {@code incompatibleImmprovements} is greater than the current FreeMarker
-     *     version, or less than 2.3.0.
+     * @throws IllegalArgumentException
+     *             If {@code incompatibleImmprovements} refers to a version that wasn't released yet when the currently
+     *             used FreeMarker version was released, or is less than 2.3.0, or is {@code null}.
      * 
      * @since 2.3.21
      */
     public Configuration(Version incompatibleImprovements) {
         super(incompatibleImprovements);
+        
+        // We postpone this until here (rather that doing this in static initializer) for two reason:
+        // - Class initialization errors are often not reported very well
+        // - This way we avoid the error if FM isn't actually used
+        checkFreeMarkerVersionClash();
         
         NullArgumentException.check("incompatibleImprovements", incompatibleImprovements);
         this.incompatibleImprovements = incompatibleImprovements;
@@ -357,38 +766,150 @@ public class Configuration extends Configurable implements Cloneable {
         loadBuiltInSharedVariables();
     }
 
+    private static void checkFreeMarkerVersionClash() {
+        if (FM_24_DETECTED) {
+            throw new RuntimeException("Clashing FreeMarker versions (" + VERSION + " and some post-2.3.x) detected: "
+                    + "found post-2.3.x class " + FM_24_DETECTION_CLASS_NAME + ". You probably have two different "
+                    + "freemarker.jar-s in the classpath.");
+        }
+    }
+    
     private void createTemplateCache() {
-        cache = new TemplateCache(getDefaultTemplateLoader());
-        cache.setConfiguration(this);
+        cache = new TemplateCache(
+                getDefaultTemplateLoader(),
+                getDefaultCacheStorage(),
+                getDefaultTemplateLookupStrategy(),
+                getDefaultTemplateNameFormat(),
+                null,
+                this);
+        cache.clear(); // for fully BC behavior
         cache.setDelay(5000);
     }
     
-    private void recreateTemplateCacheWith(TemplateLoader loader, CacheStorage storage) {
+    private void recreateTemplateCacheWith(
+            TemplateLoader loader, CacheStorage storage,
+            TemplateLookupStrategy templateLookupStrategy, TemplateNameFormat templateNameFormat,
+            TemplateConfigurerFactory templateConfigurers) {
         TemplateCache oldCache = cache;
-        cache = new TemplateCache(loader, storage);
+        cache = new TemplateCache(
+                loader, storage, templateLookupStrategy, templateNameFormat, templateConfigurers, this);
+        cache.clear(); // for fully BC behavior
         cache.setDelay(oldCache.getDelay());
-        cache.setConfiguration(this);
         cache.setLocalizedLookup(localizedLookup);
     }
     
-    private TemplateLoader getDefaultTemplateLoader() {
-        return incompatibleImprovements.intValue() < _TemplateAPI.VERSION_INT_2_3_21
-                ? _CacheAPI.createLegacyDefaultTemplateLoader()
-                : null;
+    private void recreateTemplateCache() {
+        recreateTemplateCacheWith(cache.getTemplateLoader(), cache.getCacheStorage(),
+                cache.getTemplateLookupStrategy(), cache.getTemplateNameFormat(),
+                getTemplateConfigurers());
     }
     
+    private TemplateLoader getDefaultTemplateLoader() {
+        return createDefaultTemplateLoader(getIncompatibleImprovements(), getTemplateLoader());
+    }
+
+    static TemplateLoader createDefaultTemplateLoader(Version incompatibleImprovements) {
+        return createDefaultTemplateLoader(incompatibleImprovements, null);
+    }
+    
+    private static TemplateLoader createDefaultTemplateLoader(
+            Version incompatibleImprovements, TemplateLoader existingTemplateLoader) {
+        if (incompatibleImprovements.intValue() < _TemplateAPI.VERSION_INT_2_3_21) {
+            if (existingTemplateLoader instanceof LegacyDefaultFileTemplateLoader) {
+                return existingTemplateLoader;
+            }
+            try {
+                return new LegacyDefaultFileTemplateLoader();
+            } catch (Exception e) {
+                CACHE_LOG.warn("Couldn't create legacy default TemplateLoader which accesses the current directory. "
+                        + "(Use new Configuration(Configuration.VERSION_2_3_21) or higher to avoid this.)", e);
+                return null;
+            }
+        } else {
+            return null;
+        }
+    }
+    
+    private static class LegacyDefaultFileTemplateLoader extends FileTemplateLoader {
+
+        public LegacyDefaultFileTemplateLoader() throws IOException {
+            super();
+        }
+        
+    }
+    
+    private TemplateLookupStrategy getDefaultTemplateLookupStrategy() {
+        return getDefaultTemplateLookupStrategy(getIncompatibleImprovements());
+    }
+    
+    static TemplateLookupStrategy getDefaultTemplateLookupStrategy(Version incompatibleImprovements) {
+        return TemplateLookupStrategy.DEFAULT_2_3_0;
+    }
+    
+    private TemplateNameFormat getDefaultTemplateNameFormat() {
+        return getDefaultTemplateNameFormat(getIncompatibleImprovements());
+    }
+    
+    static TemplateNameFormat getDefaultTemplateNameFormat(Version incompatibleImprovements) {
+        return TemplateNameFormat.DEFAULT_2_3_0;
+    }
+    
+    private CacheStorage getDefaultCacheStorage() {
+        return createDefaultCacheStorage(getIncompatibleImprovements(), getCacheStorage()); 
+    }
+    
+    static CacheStorage createDefaultCacheStorage(Version incompatibleImprovements, CacheStorage existingCacheStorage) {
+        if (existingCacheStorage instanceof DefaultSoftCacheStorage) {
+            return existingCacheStorage;
+        }
+        return new DefaultSoftCacheStorage(); 
+    }
+    
+    static CacheStorage createDefaultCacheStorage(Version incompatibleImprovements) {
+        return createDefaultCacheStorage(incompatibleImprovements, null); 
+    }
+    
+    private static class DefaultSoftCacheStorage extends SoftCacheStorage {
+        // Nothing to override
+    }
+
+    private TemplateExceptionHandler getDefaultTemplateExceptionHandler() {
+        return getDefaultTemplateExceptionHandler(getIncompatibleImprovements());
+    }
+    
+    private boolean getDefaultLogTemplateExceptions() {
+        return getDefaultLogTemplateExceptions(getIncompatibleImprovements());
+    }
+    
+    private ObjectWrapper getDefaultObjectWrapper() {
+        return getDefaultObjectWrapper(getIncompatibleImprovements());
+    }
+    
+    // Package visible as Configurable needs this to initialize the field defaults.
+    final static TemplateExceptionHandler getDefaultTemplateExceptionHandler(Version incompatibleImprovements) {
+        return TemplateExceptionHandler.DEBUG_HANDLER;
+    }
+
+    // Package visible as Configurable needs this to initialize the field defaults.
+    final static boolean getDefaultLogTemplateExceptions(Version incompatibleImprovements) {
+        return true;
+    }
+    
+    @Override
     public Object clone() {
         try {
-            Configuration copy = (Configuration)super.clone();
+            Configuration copy = (Configuration) super.clone();
             copy.sharedVariables = new HashMap(sharedVariables);
-            copy.localeToCharsetMap = new HashMap(localeToCharsetMap);
-            copy.autoImportNsToTmpMap = new HashMap(autoImportNsToTmpMap);
-            copy.autoImports = (ArrayList) autoImports.clone();
-            copy.autoIncludes = (ArrayList) autoIncludes.clone();
-            copy.recreateTemplateCacheWith(cache.getTemplateLoader(), cache.getCacheStorage());
+            copy.localeToCharsetMap = new ConcurrentHashMap(localeToCharsetMap);
+            copy.autoImports = (LinkedHashMap<String, String>) autoImports.clone();
+            copy.autoIncludes = (ArrayList<String>) autoIncludes.clone();
+            copy.recreateTemplateCacheWith(
+                    cache.getTemplateLoader(), cache.getCacheStorage(),
+                    cache.getTemplateLookupStrategy(), cache.getTemplateNameFormat(),
+                    cache.getTemplateConfigurers());
             return copy;
         } catch (CloneNotSupportedException e) {
-            throw new BugException(e.getMessage());  // Java 5: use cause exc.
+            throw new BugException("Cloning failed", e);
         }
     }
     
@@ -407,7 +928,7 @@ public class Configuration extends Configurable implements Cloneable {
      * The previous content of the encoding map will be lost.
      * This default map currently contains the following mappings:
      * 
-     * <table style="width: auto; border-collapse: collapse" border="1">
+     * <table style="width: auto; border-collapse: collapse" border="1" summary="preset language to encoding mapping">
      *   <tr><td>ar</td><td>ISO-8859-6</td></tr>
      *   <tr><td>be</td><td>ISO-8859-5</td></tr>
      *   <tr><td>bg</td><td>ISO-8859-5</td></tr>
@@ -520,14 +1041,19 @@ public class Configuration extends Configurable implements Cloneable {
      * typically creates with <code>new Configuration()</code> when the component
      * is initialized.
      */
+    @Deprecated
     static public Configuration getDefaultConfiguration() {
-        // Java 5: use volatile + double check
-        synchronized (defaultConfigLock) {
-            if (defaultConfig == null) {
-                defaultConfig = new Configuration();
+        Configuration defaultConfig = Configuration.defaultConfig;
+        if (defaultConfig == null) {
+            synchronized (defaultConfigLock) {
+                defaultConfig = Configuration.defaultConfig;
+                if (defaultConfig == null) {
+                    defaultConfig = new Configuration();
+                    Configuration.defaultConfig = defaultConfig; 
+                }
             }
-            return defaultConfig;
         }
+        return defaultConfig;
     }
 
     /**
@@ -538,6 +1064,7 @@ public class Configuration extends Configurable implements Cloneable {
      * easily lead to erroneous, unpredictable behaviour.
      * See more {@link Configuration#getDefaultConfiguration() here...}.
      */
+    @Deprecated
     static public void setDefaultConfiguration(Configuration config) {
         synchronized (defaultConfigLock) {
             defaultConfig = config;
@@ -552,6 +1079,7 @@ public class Configuration extends Configurable implements Cloneable {
      * 
      * <p>Convenience methods exists to install commonly used loaders, instead of using this method:
      * {@link #setClassForTemplateLoading(Class, String)}, 
+     * {@link #setClassLoaderForTemplateLoading(ClassLoader, String)}, 
      * {@link #setDirectoryForTemplateLoading(File)}, and
      * {@link #setServletContextForTemplateLoading(Object, String)}.
      * 
@@ -561,26 +1089,182 @@ public class Configuration extends Configurable implements Cloneable {
      * (But if you still care what it is, before "incompatible improvements" 2.3.21 it's a {@link FileTemplateLoader}
      * that uses the current directory as its root; as it's hard tell what that directory will be, it's not very useful
      * and dangerous. Starting with "incompatible improvements" 2.3.21 the default is {@code null}.)   
-     * 
-     * <p>Note that setting the template loader will re-create the template cache, so
-     * all its content will be lost.
      */
     public void setTemplateLoader(TemplateLoader templateLoader) {
         // "synchronized" is removed from the API as it's not safe to set anything after publishing the Configuration
         synchronized (this) {
             if (cache.getTemplateLoader() != templateLoader) {
-                recreateTemplateCacheWith(templateLoader, cache.getCacheStorage());
-                templateLoaderWasSet = true;
+                recreateTemplateCacheWith(templateLoader, cache.getCacheStorage(),
+                        cache.getTemplateLookupStrategy(), cache.getTemplateNameFormat(),
+                        cache.getTemplateConfigurers());
             }
+            templateLoaderExplicitlySet = true;
         }
+    }
+    
+    /**
+     * Resets the setting to its default, as if it was never set. This means that when you change the
+     * {@code incompatibe_improvements} setting later, the default will also change as appropriate. Also 
+     * {@link #isTemplateLoaderExplicitlySet()} will return {@code false}.
+     * 
+     * @since 2.3.22
+     */
+    public void unsetTemplateLoader() {
+        if (templateLoaderExplicitlySet) {
+            setTemplateLoader(getDefaultTemplateLoader());
+            templateLoaderExplicitlySet = false;
+        }
+    }
+
+    /**
+     * Tells if {@link #setTemplateLoader(TemplateLoader)} (or equivalent) was already called on this instance.
+     * 
+     * @since 2.3.22
+     */
+    public boolean isTemplateLoaderExplicitlySet() {
+        return templateLoaderExplicitlySet;
     }
 
     /**
      * The getter pair of {@link #setTemplateLoader(TemplateLoader)}.
      */
-    public TemplateLoader getTemplateLoader()
-    {
+    public TemplateLoader getTemplateLoader() {
+        if (cache == null) {
+            return null;
+        }
         return cache.getTemplateLoader();
+    }
+    
+    /**
+     * Sets a {@link TemplateLookupStrategy} that is used to look up templates based on the requested name; as a side
+     * effect the template cache will be emptied. The default value is {@link TemplateLookupStrategy#DEFAULT_2_3_0}.
+     * 
+     * @since 2.3.22
+     */
+    public void setTemplateLookupStrategy(TemplateLookupStrategy templateLookupStrategy) {
+        if (cache.getTemplateLookupStrategy() != templateLookupStrategy) {
+            recreateTemplateCacheWith(cache.getTemplateLoader(), cache.getCacheStorage(),
+                    templateLookupStrategy, cache.getTemplateNameFormat(),
+                    cache.getTemplateConfigurers());
+        }
+        templateLookupStrategyExplicitlySet = true;
+    }
+
+    /**
+     * Resets the setting to its default, as if it was never set. This means that when you change the
+     * {@code incompatibe_improvements} setting later, the default will also change as appropriate. Also 
+     * {@link #isTemplateLookupStrategyExplicitlySet()} will return {@code false}.
+     * 
+     * @since 2.3.22
+     */
+    public void unsetTemplateLookupStrategy() {
+        if (templateLookupStrategyExplicitlySet) {
+            setTemplateLookupStrategy(getDefaultTemplateLookupStrategy());
+            templateLookupStrategyExplicitlySet = false;
+        }
+    }
+    
+    /**
+     * Tells if {@link #setTemplateLookupStrategy(TemplateLookupStrategy)} (or equivalent) was already called on this
+     * instance.
+     * 
+     * @since 2.3.22
+     */
+    public boolean isTemplateLookupStrategyExplicitlySet() {
+        return templateLookupStrategyExplicitlySet;
+    }
+    
+    /**
+     * The getter pair of {@link #setTemplateLookupStrategy(TemplateLookupStrategy)}.
+     */
+    public TemplateLookupStrategy getTemplateLookupStrategy() {
+        if (cache == null) {
+            return null;
+        }
+        return cache.getTemplateLookupStrategy();
+    }
+    
+    /**
+     * Sets the template name format used. The default is {@link TemplateNameFormat#DEFAULT_2_3_0}, while the
+     * recommended value for new projects is {@link TemplateNameFormat#DEFAULT_2_4_0}.
+     * 
+     * @since 2.3.22
+     */
+    public void setTemplateNameFormat(TemplateNameFormat templateNameFormat) {
+        if (cache.getTemplateNameFormat() != templateNameFormat) {
+            recreateTemplateCacheWith(cache.getTemplateLoader(), cache.getCacheStorage(),
+                    cache.getTemplateLookupStrategy(), templateNameFormat,
+                    cache.getTemplateConfigurers());
+        }
+        templateNameFormatExplicitlySet = true;
+    }
+
+    /**
+     * Resets the setting to its default, as if it was never set. This means that when you change the
+     * {@code incompatibe_improvements} setting later, the default will also change as appropriate. Also 
+     * {@link #isTemplateNameFormatExplicitlySet()} will return {@code false}.
+     * 
+     * @since 2.3.22
+     */
+    public void unsetTemplateNameFormat() {
+        if (templateNameFormatExplicitlySet) {
+            setTemplateNameFormat(getDefaultTemplateNameFormat());
+            templateNameFormatExplicitlySet = false;
+        }
+    }
+    
+    /**
+     * Tells if {@link #setTemplateNameFormat(TemplateNameFormat)} (or equivalent) was already called on this instance.
+     * 
+     * @since 2.3.22
+     */
+    public boolean isTemplateNameFormatExplicitlySet() {
+        return templateNameFormatExplicitlySet;
+    }
+
+    /**
+     * The getter pair of {@link #setTemplateNameFormat(TemplateNameFormat)}.
+     */
+    public TemplateNameFormat getTemplateNameFormat() {
+        if (cache == null) {
+            return null;
+        }
+        return cache.getTemplateNameFormat();
+    }
+    
+    /**
+     * Sets a {@link TemplateConfigurerFactory} that will configure individual templates where their settings differ
+     * from those coming from the common {@link Configuration} object. A typical use case for that is specifying the
+     * {@link TemplateConfigurer#setOutputFormat(OutputFormat) outputFormat} for templates based on their file
+     * extension or parent directory.
+     * 
+     * <p>
+     * Note that the settings suggested by standard file extensions are stronger than that you set here. See
+     * {@link #setRecognizeStandardFileExtensions(boolean)} for more information about standard file extensions.
+     * 
+     * <p>See "Template configurers" in the FreeMarker Manual for examples.
+     * 
+     * @since 2.3.24
+     */
+    public void setTemplateConfigurers(TemplateConfigurerFactory templateConfigurers) {
+        if (cache.getTemplateConfigurers() != templateConfigurers) {
+            if (templateConfigurers != null) {
+                templateConfigurers.setConfiguration(this);
+            }
+            recreateTemplateCacheWith(cache.getTemplateLoader(), cache.getCacheStorage(),
+                    cache.getTemplateLookupStrategy(), cache.getTemplateNameFormat(),
+                    templateConfigurers);
+        }
+    }
+    
+    /**
+     * The getter pair of {@link #setTemplateConfigurers(TemplateConfigurerFactory)}.
+     */
+    public TemplateConfigurerFactory getTemplateConfigurers() {
+        if (cache == null) {
+            return null;
+        }
+        return cache.getTemplateConfigurers();
     }
 
     /**
@@ -595,11 +1279,39 @@ public class Configuration extends Configurable implements Cloneable {
      * <p>Note that setting the cache storage will re-create the template cache, so
      * all its content will be lost.
      */
-    public void setCacheStorage(CacheStorage storage) {
+    public void setCacheStorage(CacheStorage cacheStorage) {
         // "synchronized" is removed from the API as it's not safe to set anything after publishing the Configuration
         synchronized (this) {
-            recreateTemplateCacheWith(cache.getTemplateLoader(), storage);
+            if (getCacheStorage() != cacheStorage) {
+                recreateTemplateCacheWith(cache.getTemplateLoader(), cacheStorage,
+                        cache.getTemplateLookupStrategy(), cache.getTemplateNameFormat(),
+                        cache.getTemplateConfigurers());
+            }
+            cacheStorageExplicitlySet = true;
         }
+    }
+    
+    /**
+     * Resets the setting to its default, as if it was never set. This means that when you change the
+     * {@code incompatibe_improvements} setting later, the default will also change as appropriate. Also 
+     * {@link #isCacheStorageExplicitlySet()} will return {@code false}.
+     * 
+     * @since 2.3.22
+     */
+    public void unsetCacheStorage() {
+        if (cacheStorageExplicitlySet) {
+            setCacheStorage(getDefaultCacheStorage());
+            cacheStorageExplicitlySet = false;
+        }
+    }
+    
+    /**
+     * Tells if {@link #setCacheStorage(CacheStorage)} (or equivalent) was already called on this instance.
+     * 
+     * @since 2.3.22
+     */
+    public boolean isCacheStorageExplicitlySet() {
+        return cacheStorageExplicitlySet;
     }
     
     /**
@@ -610,6 +1322,9 @@ public class Configuration extends Configurable implements Cloneable {
     public CacheStorage getCacheStorage() {
         // "synchronized" is removed from the API as it's not safe to set anything after publishing the Configuration
         synchronized (this) {
+            if (cache == null) {
+                return null;
+            }
             return cache.getCacheStorage();
         }
     }
@@ -636,9 +1351,9 @@ public class Configuration extends Configurable implements Cloneable {
      * Sets the servlet context from which to load templates.
      * This is equivalent to {@code setTemplateLoader(new WebappTemplateLoader(sctxt, path))}
      * or {@code setTemplateLoader(new WebappTemplateLoader(sctxt))} if {@code path} was
-     * {@code null}, so see {@link WebappTemplateLoader} for more details.
+     * {@code null}, so see {@code freemarker.cache.WebappTemplateLoader} for more details.
      * 
-     * @param servletContext the {@link ServletContext} object. (The declared type is {@link Object}
+     * @param servletContext the {@code javax.servlet.ServletContext} object. (The declared type is {@link Object}
      *        to prevent class loading error when using FreeMarker in an environment where
      *        there's no servlet classes available.)
      * @param path the path relative to the ServletContext.
@@ -673,23 +1388,80 @@ public class Configuration extends Configurable implements Cloneable {
     }
 
     /**
-     * Sets a class relative to which we do the Class.getResource() call to load templates.
-     * This is equivalent to {@code setTemplateLoader(new ClassTemplateLoader(clazz, pathPrefix))},
-     * so see {@link ClassTemplateLoader#ClassTemplateLoader(Class, String)} for more details.
+     * Sets the class whose {@link Class#getResource(String)} method will be used to load templates, from the inside the
+     * package specified. See {@link ClassTemplateLoader#ClassTemplateLoader(Class, String)} for more details.
      * 
+     * @param basePackagePath
+     *            Separate steps with {@code "/"}, not {@code "."}, and note that it matters if this starts with
+     *            {@code /} or not. See {@link ClassTemplateLoader#ClassTemplateLoader(Class, String)} for more details.
+     * 
+     * @see #setClassLoaderForTemplateLoading(ClassLoader, String)
      * @see #setTemplateLoader(TemplateLoader)
      */
-    public void setClassForTemplateLoading(Class clazz, String pathPrefix) {
-        setTemplateLoader(new ClassTemplateLoader(clazz, pathPrefix));
+    public void setClassForTemplateLoading(Class resourceLoaderClass, String basePackagePath) {
+        setTemplateLoader(new ClassTemplateLoader(resourceLoaderClass, basePackagePath));
+    }
+    
+    /**
+     * Sets the {@link ClassLoader} whose {@link ClassLoader#getResource(String)} method will be used to load templates,
+     * from the inside the package specified. See {@link ClassTemplateLoader#ClassTemplateLoader(Class, String)} for
+     * more details.
+     * 
+     * @param basePackagePath
+     *            Separate steps with {@code "/"}, not {@code "."}. See
+     *            {@link ClassTemplateLoader#ClassTemplateLoader(Class, String)} for more details.
+     * 
+     * @see #setClassForTemplateLoading(Class, String)
+     * @see #setTemplateLoader(TemplateLoader)
+     * 
+     * @since 2.3.22
+     */
+    public void setClassLoaderForTemplateLoading(ClassLoader classLoader, String basePackagePath) {
+        setTemplateLoader(new ClassTemplateLoader(classLoader, basePackagePath));
     }
 
     /**
-     * Sets the time in seconds that must elapse before checking whether there is a newer version of a template file
+     * Sets the time in seconds that must elapse before checking whether there is a newer version of a template "file"
      * than the cached one.
-     * This method is thread-safe and can be called while the engine works.
+     * 
+     * <p>
+     * Historical note: Despite what the API documentation said earlier, this method is <em>not</em> thread-safe. While
+     * it works well on most hardware, it's not guaranteed that FreeMarker will see the update in all threads, and
+     * theoretically it's also possible that it will see a value that's a binary mixture of the new and the old one.
+     * 
+     * @deprecated Use {@link #setTemplateUpdateDelayMilliseconds(long)} instead, because the time granularity of this method
+     *             is often misunderstood to be milliseconds.
      */
+    @Deprecated
     public void setTemplateUpdateDelay(int seconds) {
         cache.setDelay(1000L * seconds);
+    }
+
+    /**
+     * Sets the time in milliseconds that must elapse before checking whether there is a newer version of a template
+     * "file" exists than the cached one. Defaults to 5000 ms.
+     * 
+     * <p>
+     * When you get a template via {@link #getTemplate(String)} (or some of its overloads). FreeMarker will try to get
+     * the template from the template cache. If the template is found, and at least this amount of time was elapsed
+     * since the template last modification date was checked, FreeMarker will re-check the last modification date (this
+     * could mean I/O), possibly reloading the template and updating the cache as a consequence (can mean even more
+     * I/O). The {@link #getTemplate(String)} (or some of its overloads) call will only return after this all is
+     * done, so it will return the fresh template.
+     * 
+     * @since 2.3.23
+     */
+    public void setTemplateUpdateDelayMilliseconds(long millis) {
+        cache.setDelay(millis);
+    }
+    
+    /**
+     * The getter pair of {@link #setTemplateUpdateDelayMilliseconds(long)}.
+     * 
+     * @since 2.3.23
+     */
+    public long getTemplateUpdateDelayMilliseconds() {
+        return cache.getDelay();
     }
     
     /**
@@ -698,20 +1470,22 @@ public class Configuration extends Configurable implements Cloneable {
      * 
      * <p>When this is {@code true},
      * any tag not starting with &lt;# or &lt;/# or &lt;@ or &lt;/@ is considered as plain text
-     * and will go to the output as is. Tag starting with &lt# or &lt/# must
-     * be valid FTL tag, or else the template is invalid (i.e. &lt;#noSuchDirective>
+     * and will go to the output as is. Tag starting with &lt;# or &lt;/# must
+     * be valid FTL tag, or else the template is invalid (i.e. &lt;#noSuchDirective&gt;
      * is an error).
      * 
      * @deprecated Only {@code true} (the default) value will be supported sometimes in the future.
      */
+    @Deprecated
     public void setStrictSyntaxMode(boolean b) {
         strictSyntax = b;
     }
 
+    @Override
     public void setObjectWrapper(ObjectWrapper objectWrapper) {
         ObjectWrapper prevObjectWrapper = getObjectWrapper();
         super.setObjectWrapper(objectWrapper);
-        objectWrapperWasSet = true;
+        objectWrapperExplicitlySet = true;
         if (objectWrapper != prevObjectWrapper) {
             try {
                 setSharedVariablesFromRewrappableSharedVariables();
@@ -721,6 +1495,91 @@ public class Configuration extends Configurable implements Cloneable {
                         e);
             }
         }
+    }
+    
+    /**
+     * Resets the setting to its default, as if it was never set. This means that when you change the
+     * {@code incompatibe_improvements} setting later, the default will also change as appropriate. Also 
+     * {@link #isObjectWrapperExplicitlySet()} will return {@code false}.
+     * 
+     * @since 2.3.22
+     */
+    public void unsetObjectWrapper() {
+        if (objectWrapperExplicitlySet) {
+            setObjectWrapper(getDefaultObjectWrapper());
+            objectWrapperExplicitlySet = false;
+        }
+    }
+    
+    /**
+     * Tells if {@link #setObjectWrapper(ObjectWrapper)} (or equivalent) was already called on this instance.
+     * 
+     * @since 2.3.22
+     */
+    public boolean isObjectWrapperExplicitlySet() {
+        return objectWrapperExplicitlySet;
+    }
+    
+    @Override
+    public void setTemplateExceptionHandler(TemplateExceptionHandler templateExceptionHandler) {
+        super.setTemplateExceptionHandler(templateExceptionHandler);
+        templateExceptionHandlerExplicitlySet = true;
+    }
+
+    /**
+     * Resets the setting to its default, as if it was never set. This means that when you change the
+     * {@code incompatibe_improvements} setting later, the default will also change as appropriate. Also 
+     * {@link #isTemplateExceptionHandlerExplicitlySet()} will return {@code false}.
+     * 
+     * @since 2.3.22
+     */
+    public void unsetTemplateExceptionHandler() {
+        if (templateExceptionHandlerExplicitlySet) {
+            setTemplateExceptionHandler(getDefaultTemplateExceptionHandler());
+            templateExceptionHandlerExplicitlySet = false;
+        }
+    }
+    
+    /**
+     * Tells if {@link #setTemplateExceptionHandler(TemplateExceptionHandler)} (or equivalent) was already called on
+     * this instance.
+     * 
+     * @since 2.3.22
+     */
+    public boolean isTemplateExceptionHandlerExplicitlySet() {
+        return templateExceptionHandlerExplicitlySet;
+    }    
+    
+    /**
+     * @since 2.3.22
+     */
+    @Override
+    public void setLogTemplateExceptions(boolean value) {
+        super.setLogTemplateExceptions(value);
+        logTemplateExceptionsExplicitlySet = true;
+    }
+
+    /**
+     * Resets the setting to its default, as if it was never set. This means that when you change the
+     * {@code incompatibe_improvements} setting later, the default will also change as appropriate. Also 
+     * {@link #isTemplateExceptionHandlerExplicitlySet()} will return {@code false}.
+     * 
+     * @since 2.3.22
+     */
+    public void unsetLogTemplateExceptions() {
+        if (logTemplateExceptionsExplicitlySet) {
+            setLogTemplateExceptions(getDefaultLogTemplateExceptions());
+            logTemplateExceptionsExplicitlySet = false;
+        }
+    }
+    
+    /**
+     * Tells if {@link #setLogTemplateExceptions(boolean)} (or equivalent) was already called on this instance.
+     * 
+     * @since 2.3.22
+     */
+    public boolean isLogTemplateExceptionsExplicitlySet() {
+        return logTemplateExceptionsExplicitlySet;
     }
 
     /**
@@ -739,25 +1598,54 @@ public class Configuration extends Configurable implements Cloneable {
      * expected.) Note that if the {@code template_loader} have to be changed because of this, the template cache will
      * be emptied.
      * 
-     * @throws IllegalArgumentException if {@code incompatibleImmprovements} is greater than the current FreeMarker
-     *     version, or less than 2.3.0, or {@code null}.
+     * @throws IllegalArgumentException
+     *             If {@code incompatibleImmprovements} refers to a version that wasn't released yet when the currently
+     *             used FreeMarker version was released, or is less than 2.3.0, or is {@code null}.
      * 
      * @since 2.3.20
      */
     public void setIncompatibleImprovements(Version incompatibleImprovements) {
         _TemplateAPI.checkVersionNotNullAndSupported(incompatibleImprovements);
         
-        boolean hadLegacyTLOWDefaults
-                = this.incompatibleImprovements.intValue() < _TemplateAPI.VERSION_INT_2_3_21; 
-        this.incompatibleImprovements = incompatibleImprovements;
-        if (hadLegacyTLOWDefaults != incompatibleImprovements.intValue() < _TemplateAPI.VERSION_INT_2_3_21) {
-            if (!templateLoaderWasSet) {
-                recreateTemplateCacheWith(getDefaultTemplateLoader(), cache.getCacheStorage());
+        if (!this.incompatibleImprovements.equals(incompatibleImprovements)) {
+            this.incompatibleImprovements = incompatibleImprovements;
+            
+            if (!templateLoaderExplicitlySet) {
+                templateLoaderExplicitlySet = true; 
+                unsetTemplateLoader();
             }
-            if (!objectWrapperWasSet) {
-                // We use `super.` so that `objectWrapperWasSet` will not be set to `true`. 
-                super.setObjectWrapper(getDefaultObjectWrapper(incompatibleImprovements));
+
+            if (!templateLookupStrategyExplicitlySet) {
+                templateLookupStrategyExplicitlySet = true;
+                unsetTemplateLookupStrategy();
             }
+            
+            if (!templateNameFormatExplicitlySet) {
+                templateNameFormatExplicitlySet = true;
+                unsetTemplateNameFormat();
+            }
+            
+            if (!cacheStorageExplicitlySet) {
+                cacheStorageExplicitlySet = true;
+                unsetCacheStorage();
+            }
+            
+            if (!templateExceptionHandlerExplicitlySet) {
+                templateExceptionHandlerExplicitlySet = true;
+                unsetTemplateExceptionHandler();
+            }
+            
+            if (!logTemplateExceptionsExplicitlySet) {
+                logTemplateExceptionsExplicitlySet = true;
+                unsetLogTemplateExceptions();
+            }
+            
+            if (!objectWrapperExplicitlySet) {
+                objectWrapperExplicitlySet = true;
+                unsetObjectWrapper();
+            }
+            
+            recreateTemplateCache();
         }
     }
 
@@ -774,6 +1662,7 @@ public class Configuration extends Configurable implements Cloneable {
      * @deprecated Use {@link #Configuration(Version)}, or
      *    as last chance, {@link #setIncompatibleImprovements(Version)} instead.
      */
+    @Deprecated
     public void setIncompatibleEnhancements(String version) {
         setIncompatibleImprovements(new Version(version));
     }
@@ -781,6 +1670,7 @@ public class Configuration extends Configurable implements Cloneable {
     /**
      * @deprecated Use {@link #getIncompatibleImprovements()} instead.
      */
+    @Deprecated
     public String getIncompatibleEnhancements() {
         return incompatibleImprovements.toString();
     }
@@ -788,6 +1678,7 @@ public class Configuration extends Configurable implements Cloneable {
     /**
      * @deprecated Use {@link #getIncompatibleImprovements()} instead.
      */
+    @Deprecated
     public int getParsedIncompatibleEnhancements() {
         return getIncompatibleImprovements().intValue();
     }
@@ -809,7 +1700,361 @@ public class Configuration extends Configurable implements Cloneable {
     public boolean getWhitespaceStripping() {
         return whitespaceStripping;
     }
+
+    /**
+     * Sets when auto-escaping should be enabled depending on the current output format; default is
+     * {@link #ENABLE_IF_DEFAULT_AUTO_ESCAPING_POLICY}. Note that the default output format,
+     * {@link UndefinedOutputFormat}, is a non-escaping format, so there auto-escaping will be off.
+     * Note that the templates can turn auto-escaping on/off locally with directives like {@code <#ftl auto_esc=...>},
+     * which will ignore the policy.
+     * 
+     * <p><b>About auto-escaping</b></p>
+     * 
+     * <p>
+     * Auto-escaping has significance when a value is printed with <code>${...}</code> (or <code>#{...}</code>). If
+     * auto-escaping is on, FreeMarker will assume that the value is plain text (as opposed to markup or some kind of
+     * rich text), so it will escape it according the current output format (see {@link #setOutputFormat(OutputFormat)}
+     * and {@link TemplateConfigurer#setOutputFormat(OutputFormat)}). If auto-escaping is off, FreeMarker will assume
+     * that the string value is already in the output format, so it prints it as is to the output.
+     *
+     * <p>Further notes on auto-escaping:
+     * <ul>
+     *   <li>When printing numbers, dates, and other kind of non-string values with <code>${...}</code>, they will be
+     *       first converted to string (according the formatting settings and locale), then they are escaped just like
+     *       string values.
+     *   <li>When printing {@link TemplateMarkupOutputModel}-s, they aren't escaped again (they are already escaped).
+     *   <li>Auto-escaping doesn't do anything if the current output format isn't an {@link MarkupOutputFormat}.
+     *       That's the case for the default output format, {@link UndefinedOutputFormat}, and also for
+     *       {@link PlainTextOutputFormat}.
+     *   <li>The output format inside a string literal expression is always {@link PlainTextOutputFormat}
+     *       (regardless of the output format of the containing template), which is a non-escaping format. Thus for
+     *       example, with <code>&lt;#assign s = "foo${bar}"&gt;</code>, {@code bar} will always get into {@code s}
+     *       without escaping, but with <code>&lt;#assign s&gt;foo${bar}&lt;#assign&gt;</code> it may will be escaped.
+     * </ul>
+     * 
+     * <p>Note that what you set here is just a default, which can be overridden for individual templates via
+     * {@link #setTemplateConfigurers(TemplateConfigurerFactory)}. This setting is also overridden by the standard file
+     * extensions; see them at {@link #setRecognizeStandardFileExtensions(boolean)}.
+     * 
+     * @param autoEscapingPolicy
+     *          One of the {@link #ENABLE_IF_DEFAULT_AUTO_ESCAPING_POLICY},
+     *          {@link #ENABLE_IF_SUPPORTED_AUTO_ESCAPING_POLICY}, and {@link #DISABLE_AUTO_ESCAPING_POLICY} constants.  
+     * 
+     * @see TemplateConfigurer#setAutoEscapingPolicy(int)
+     * @see Configuration#setOutputFormat(OutputFormat)
+     * @see TemplateConfigurer#setOutputFormat(OutputFormat)
+     * 
+     * @since 2.3.24
+     */
+    public void setAutoEscapingPolicy(int autoEscapingPolicy) {
+        _TemplateAPI.validateAutoEscapingPolicyValue(autoEscapingPolicy);
+        
+        int prevAutoEscaping = getAutoEscapingPolicy();
+        this.autoEscapingPolicy = autoEscapingPolicy;
+        if (prevAutoEscaping != autoEscapingPolicy) {
+            clearTemplateCache();
+        }
+    }
+
+    /**
+     * Getter pair of {@link #setAutoEscapingPolicy(int)}
+     * 
+     * @since 2.3.24
+     */
+    public int getAutoEscapingPolicy() {
+        return autoEscapingPolicy;
+    }
     
+    /**
+     * Sets the (default) output format. Usually, you leave this on its default, which is
+     * {@link UndefinedOutputFormat#INSTANCE}, and then override it for individual templates based on their name (like
+     * based on their "file" extension) with {@link #setTemplateConfigurers(TemplateConfigurerFactory)}. This setting is
+     * also overridden by the standard file extensions; see them at
+     * {@link #setRecognizeStandardFileExtensions(boolean)}.
+     * 
+     * <p>
+     * The output format is mostly important because of auto-escaping (see {@link #setAutoEscapingPolicy(int)}), but maybe
+     * also used by the embedding application to set the HTTP response MIME type, etc.
+     * 
+     * @see #setRegisteredCustomOutputFormats(Collection)
+     * @see #setTemplateConfigurers(TemplateConfigurerFactory)
+     * @see #setRecognizeStandardFileExtensions(boolean)
+     * @see #setAutoEscapingPolicy(int)
+     * 
+     * @since 2.3.24
+     */
+    public void setOutputFormat(OutputFormat outputFormat) {
+        if (outputFormat == null) {
+            throw new NullArgumentException(
+                    "outputFormat",
+                    "You may meant: " + UndefinedOutputFormat.class.getSimpleName() + ".INSTANCE");
+        }
+        OutputFormat prevOutputFormat = getOutputFormat();
+        this.outputFormat = outputFormat;
+        outputFormatExplicitlySet = true;
+        if (prevOutputFormat != outputFormat) {
+            clearTemplateCache();
+        }
+    }
+
+    /**
+     * Getter pair of {@link #setOutputFormat(OutputFormat)}
+     * 
+     * @since 2.3.24
+     */
+    public OutputFormat getOutputFormat() {
+        return outputFormat;
+    }
+    
+    /**
+     * Tells if {@link #setOutputFormat(OutputFormat)} (or equivalent) was already called on this instance.
+     * 
+     * @since 2.3.24
+     */
+    public boolean isOutputFormatExplicitlySet() {
+        return outputFormatExplicitlySet;
+    }
+    
+    /**
+     * Resets the setting to its default, as if it was never set. This means that when you change the
+     * {@code incompatibe_improvements} setting later, the default will also change as appropriate. Also
+     * {@link #isOutputFormatExplicitlySet()} will return {@code false}.
+     * 
+     * @since 2.3.24
+     */
+    public void unsetOutputFormat() {
+        outputFormat = UndefinedOutputFormat.INSTANCE;
+        outputFormatExplicitlySet = false;
+    }
+    
+    /**
+     * Returns the output format for a name (not {@code null}).
+     * 
+     * <p>
+     * The name can also refer to a combined format that's created ad-hoc from the registered formats. For example, if
+     * you need RTF embedded into HTML, the name will be <code>HTML{RTF}</code>, where "HTML" and "RTF" refer to the
+     * existing formats. This logic can be used recursively, so for example <code>XML{HTML{RTF}}</code> is also valid.
+     * 
+     * @throws UnregisteredOutputFormatException
+     *             If there's no output format registered with the given name.
+     * @throws IllegalArgumentException
+     *             If the usage of <code>{</code> and <code>}</code> in the name is syntactically wrong, or if not
+     *             all {@link OutputFormat}-s are {@link MarkupOutputFormat}-s in the <code>...{...}</code>
+     *             expression.
+     * 
+     * @since 2.3.24
+     */
+    public OutputFormat getOutputFormat(String name) throws UnregisteredOutputFormatException {
+        if (name.length() == 0) {
+            throw new IllegalArgumentException("0-length format name");
+        }
+        if (name.charAt(name.length() - 1) == '}') {
+            // Combined markup
+            int openBrcIdx = name.indexOf('{');
+            if (openBrcIdx == -1) {
+                throw new IllegalArgumentException("Missing opening '{' in: " + name);
+            }
+            
+            MarkupOutputFormat outerOF = getMarkupOutputFormatForCombined(name.substring(0, openBrcIdx));
+            MarkupOutputFormat innerOF = getMarkupOutputFormatForCombined(name.substring(openBrcIdx + 1, name.length() - 1));
+            
+            return new CombinedMarkupOutputFormat(name, outerOF, innerOF);
+        } else {
+            OutputFormat custOF = registeredCustomOutputFormats.get(name);
+            if (custOF != null) {
+                return custOF;
+            }
+            
+            OutputFormat stdOF = STANDARD_OUTPUT_FORMATS.get(name);
+            if (stdOF == null) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("Unregistered output format name, ");
+                sb.append(StringUtil.jQuote(name));
+                sb.append(". The output formats registered in the Configuration are: ");
+                
+                Set<String> registeredNames = new TreeSet<String>();
+                registeredNames.addAll(STANDARD_OUTPUT_FORMATS.keySet());
+                registeredNames.addAll(registeredCustomOutputFormats.keySet());
+                
+                boolean first = true;
+                for (String registeredName : registeredNames) {
+                    if (first) {
+                        first = false;
+                    } else {
+                        sb.append(", ");
+                    }
+                    sb.append(StringUtil.jQuote(registeredName));
+                }
+                
+                throw new UnregisteredOutputFormatException(sb.toString());
+            }
+            return stdOF;
+        }
+    }
+
+    private MarkupOutputFormat getMarkupOutputFormatForCombined(String outerName)
+            throws UnregisteredOutputFormatException {
+        OutputFormat of = getOutputFormat(outerName);
+        if (!(of instanceof MarkupOutputFormat)) {
+            throw new IllegalArgumentException("The \"" + outerName + "\" output format can't be used in "
+                    + "...{...} expression, because it's not a markup format.");
+        }
+        MarkupOutputFormat outerOF = (MarkupOutputFormat) of;
+        return outerOF;
+    }
+    
+    /**
+     * Sets the custom output formats that can be referred by their unique name ({@link OutputFormat#getName()}) from
+     * templates. Names are also used to look up the {@link OutputFormat} for standard file extensions; see them at
+     * {@link #setRecognizeStandardFileExtensions(boolean)}.
+     * 
+     * <p>
+     * When there's a clash between a custom output format name and a standard output format name, the custom format
+     * will win, thus you can override the meaning of standard output format names. Except, it's not allowed to override
+     * {@link UndefinedOutputFormat} and {@link PlainTextOutputFormat}.
+     * 
+     * <p>
+     * The default value is an empty collection.
+     * 
+     * @param registeredCustomOutputFormats
+     *            The collection of the {@link OutputFormat}-s, each must be different and has a unique name within this
+     *            collection.
+     * 
+     * @throws IllegalArgumentException
+     *             When multiple different {@link OutputFormat}-s have the same name in the parameter collection. When
+     *             the same {@link OutputFormat} object occurs for multiple times in the collection. If an
+     *             {@link OutputFormat} name is 0 long. If an {@link OutputFormat} name doesn't start with letter or
+     *             digit. If an {@link OutputFormat} name contains {@code '+'} or <code>'{'</code> or <code>'}'</code>.
+     *             If an {@link OutputFormat} name equals to {@link UndefinedOutputFormat#getName()} or
+     *             {@link PlainTextOutputFormat#getName()}.
+     * 
+     * @since 2.3.24
+     */
+    public void setRegisteredCustomOutputFormats(Collection<? extends OutputFormat> registeredCustomOutputFormats) {
+        NullArgumentException.check(registeredCustomOutputFormats);
+        Map<String, OutputFormat> m = new LinkedHashMap<String, OutputFormat>(
+                registeredCustomOutputFormats.size() * 4 / 3, 1f);
+        for (OutputFormat outputFormat : registeredCustomOutputFormats) {
+            String name = outputFormat.getName();
+            if (name.equals(UndefinedOutputFormat.INSTANCE.getName())) {
+                throw new IllegalArgumentException(
+                        "The \"" + name + "\" output format can't be redefined");
+            }
+            if (name.equals(PlainTextOutputFormat.INSTANCE.getName())) {
+                throw new IllegalArgumentException(
+                        "The \"" + name + "\" output format can't be redefined");
+            }
+            if (name.length() == 0) {
+                throw new IllegalArgumentException("The output format name can't be 0 long");
+            }
+            if (!Character.isLetterOrDigit(name.charAt(0))) {
+                throw new IllegalArgumentException("The output format name must start with letter or digit: "
+                        + name);
+            }
+            if (name.indexOf('+') != -1) {
+                throw new IllegalArgumentException("The output format name can't contain \"+\" character: "
+                        + name);
+            }
+            if (name.indexOf('{') != -1) {
+                throw new IllegalArgumentException("The output format name can't contain \"{\" character: "
+                        + name);
+            }
+            if (name.indexOf('}') != -1) {
+                throw new IllegalArgumentException("The output format name can't contain \"}\" character: "
+                        + name);
+            }
+            
+            OutputFormat replaced = m.put(outputFormat.getName(), outputFormat);
+            if (replaced != null) {
+                if (replaced == outputFormat) {
+                    throw new IllegalArgumentException(
+                            "Duplicate output format in the collection: " + outputFormat);
+                }
+                throw new IllegalArgumentException(
+                        "Clashing output format names between " + replaced + " and " + outputFormat + ".");
+            }
+        }
+        this.registeredCustomOutputFormats = Collections.unmodifiableMap(m);
+        
+        cache.clear();
+    }
+    
+    /**
+     * Getter pair of {@link #setRegisteredCustomOutputFormats(Collection)}.
+     * 
+     * @since 2.3.24
+     */
+    public Collection<? extends OutputFormat> getRegisteredCustomOutputFormats() {
+        return registeredCustomOutputFormats.values();
+    }
+
+    /**
+     * Sets if the "file" extension part of the source name ({@link Template#getSourceName()}) will influence certain
+     * parsing settings. For backward compatibility, it defaults to {@code false} if
+     * {@link #getIncompatibleImprovements()} is less than 2.3.24. Starting from {@code incompatibleImprovements}
+     * 2.3.24, defaults to {@code true}, so the following standard file extensions take their effect:
+     * 
+     * <ul>
+     *   <li>{@code ftlh}: Sets {@link TemplateConfigurer#setOutputFormat(OutputFormat) outputFormat} to {@code "HTML"}
+     *       (i.e., {@link HTMLOutputFormat#INSTANCE} unless the {@code "HTML"} name is overridden by
+     *       {@link #setRegisteredCustomOutputFormats(Collection)}) and
+     *       {@link #ENABLE_IF_DEFAULT_AUTO_ESCAPING_POLICY}
+     *       {@link TemplateConfigurer#setAutoEscapingPolicy(int) autoEscapingPolicy}.
+     *   <li>{@code ftlx}: Sets {@link TemplateConfigurer#setOutputFormat(OutputFormat) outputFormat} to {@code "XML"}
+     *       (i.e., {@link XMLOutputFormat#INSTANCE} unless the {@code "XML"} name is overridden by
+     *       {@link #setRegisteredCustomOutputFormats(Collection)}) and
+     *       {@link #ENABLE_IF_DEFAULT_AUTO_ESCAPING_POLICY}
+     *       {@link TemplateConfigurer#setAutoEscapingPolicy(int) autoEscapingPolicy}.
+     * </ul>
+     * 
+     * <p>These file extensions are not case sensitive. The file extension is the part after the last dot in the source
+     * name. If the source name contains no dot, then it has no file extension.
+     * 
+     * <p>The settings activated by these file extensions override the settings values dictated by
+     * {@link #setTemplateConfigurers(TemplateConfigurerFactory)}.
+     */
+    public void setRecognizeStandardFileExtensions(boolean recognizeStandardFileExtensions) {
+        boolean prevEffectiveValue = getRecognizeStandardFileExtensions();
+        this.recognizeStandardFileExtensions = Boolean.valueOf(recognizeStandardFileExtensions);
+        if (prevEffectiveValue != recognizeStandardFileExtensions) {
+            clearTemplateCache();
+        }
+    }
+
+    /**
+     * Resets the setting to its default, as if it was never set. This means that when you change the
+     * {@code incompatibe_improvements} setting later, the default will also change as appropriate. Also 
+     * {@link #isRecognizeStandardFileExtensionsExplicitlySet()} will return {@code false}.
+     * 
+     * @since 2.3.24
+     */
+    public void unsetRecognizeStandardFileExtensions() {
+        if (recognizeStandardFileExtensions != null) {
+            recognizeStandardFileExtensions = null;
+        }
+    }
+    
+    /**
+     * Tells if {@link #setRecognizeStandardFileExtensions(boolean)} (or equivalent) was already called on this
+     * instance.
+     * 
+     * @since 2.3.24
+     */
+    public boolean isRecognizeStandardFileExtensionsExplicitlySet() {
+        return recognizeStandardFileExtensions != null;
+    }
+    
+    /**
+     * Getter pair of {@link #setRecognizeStandardFileExtensions(boolean)}.
+     * 
+     * @since 2.3.24
+     */
+    public boolean getRecognizeStandardFileExtensions() {
+        return recognizeStandardFileExtensions == null
+                ? incompatibleImprovements.intValue() >= _TemplateAPI.VERSION_INT_2_3_24
+                : recognizeStandardFileExtensions.booleanValue();
+    }
+
     /**
      * Determines the syntax of the template files (angle bracket VS square bracket)
      * that has no {@code #ftl} in it. The {@code tagSyntax}
@@ -834,130 +2079,249 @@ public class Configuration extends Configurable implements Cloneable {
      * the syntax.
      */
     public void setTagSyntax(int tagSyntax) {
-        if (tagSyntax != AUTO_DETECT_TAG_SYNTAX
-            && tagSyntax != SQUARE_BRACKET_TAG_SYNTAX
-            && tagSyntax != ANGLE_BRACKET_TAG_SYNTAX)
-        {
-            throw new IllegalArgumentException("\"tag_syntax\" can only be set to one of these: "
-                    + "Configuration.AUTO_DETECT_TAG_SYNTAX, Configuration.ANGLE_BRACKET_SYNTAX, "
-                    + "or Configuration.SQAUARE_BRACKET_SYNTAX");
-        }
+        _TemplateAPI.valideTagSyntaxValue(tagSyntax);
         this.tagSyntax = tagSyntax;
     }
-    
+
     /**
      * The getter pair of {@link #setTagSyntax(int)}.
      */
     public int getTagSyntax() {
         return tagSyntax;
     }
+
+    /**
+     * Sets the naming convention used for the identifiers that are part of the template language. The available naming
+     * conventions are legacy (directive (tag) names are all-lower-case {@code likethis}, others are snake case
+     * {@code like_this}), and camel case ({@code likeThis}). The default is auto-detect, which detects the naming
+     * convention used and enforces that same naming convention for the whole template.
+     * 
+     * <p>
+     * This setting doesn't influence what naming convention is used for the setting names outside templates. Also, it
+     * won't ever convert the names of user-defined things, like of data-model members, or the names of user defined
+     * macros/functions. It only influences the names of the built-in directives ({@code #elseIf} VS {@code elseif}),
+     * built-ins ({@code ?upper_case} VS {@code ?upperCase} ), special variables ({@code .data_model} VS
+     * {@code .dataModel}).
+     * 
+     * <p>
+     * Which convention to use: FreeMarker prior to 2.3.23 has only supported
+     * {@link Configuration#LEGACY_NAMING_CONVENTION}, so that's how most templates and examples out there are written
+     * as of 2015. But as templates today are mostly written by programmers and often access Java API-s which already
+     * use camel case, {@link Configuration#CAMEL_CASE_NAMING_CONVENTION} is the recommended option for most projects.
+     * However, it's no necessary to make a application-wide decision; see auto-detection below.
+     * 
+     * <p>
+     * FreeMarker will decide the naming convention automatically for each template individually when this setting is
+     * set to {@link #AUTO_DETECT_NAMING_CONVENTION} (which is the default). The naming convention of a template is
+     * decided when the first core (non-user-defined) identifier is met during parsing (not during processing) where the
+     * naming convention is relevant (like for {@code s?upperCase} or {@code s?upper_case} it's relevant, but for
+     * {@code s?length} it isn't). At that point, the naming convention of the template is decided, and any later core
+     * identifier that uses a different convention will be a parsing error. As the naming convention is decided per
+     * template, it's not a problem if a template and the other template it {@code #include}-s/{@code #import} uses a
+     * different convention.
+     * 
+     * <p>
+     * FreeMarker always enforces the same naming convention to be used consistently within the same template "file".
+     * Additionally, when this setting is set to non-{@link #AUTO_DETECT_NAMING_CONVENTION}, the selected naming
+     * convention is enforced on all templates. Thus such a setup can be used to enforce an application-wide naming
+     * convention.
+     * 
+     * <p>
+     * Non-strict tags (a long deprecated syntax from FreeMarker 1, activated via {@link #setStrictSyntaxMode(boolean)})
+     * are only recognized as FTL tags when they are using the {@link Configuration#LEGACY_NAMING_CONVENTION} syntax,
+     * regardless of this setting. As they aren't exempt from the naming convention consistency enforcement, generally,
+     * you can't use strict {@link Configuration#CAMEL_CASE_NAMING_CONVENTION} tags mixed with non-strict tags.
+     * 
+     * @param namingConvention
+     *            One of the {@link #AUTO_DETECT_NAMING_CONVENTION} or {@link #LEGACY_NAMING_CONVENTION}
+     *            {@link #CAMEL_CASE_NAMING_CONVENTION}.
+     * 
+     * @throws IllegalArgumentException
+     *             If the parameter isn't one of the valid constants.
+     * 
+     * @since 2.3.23
+     */
+    public void setNamingConvention(int namingConvention) {
+        _TemplateAPI.validateNamingConventionValue(namingConvention);
+        this.namingConvention = namingConvention;
+    }
+
+    /**
+     * The getter pair of {@link #setNamingConvention(int)}.
+     * 
+     * @since 2.3.23
+     */
+    public int getNamingConvention() {
+        return namingConvention;
+    }
     
     /**
      * Retrieves the template with the given name from the template cache, loading it into the cache first if it's
      * missing/staled.
      * 
-     * <p>This is a shorthand for {@link #getTemplate(String, Locale, String, boolean, boolean)
-     * getTemplate(name, getLocale(), getEncoding(getLocale()), true, false)}; see more details there.
+     * <p>
+     * This is a shorthand for {@link #getTemplate(String, Locale, Object, String, boolean, boolean)
+     * getTemplate(name, null, null, null, true, false)}; see more details there.
      * 
-     * <p>See {@link Configuration} for an example of basic usage.
+     * <p>
+     * See {@link Configuration} for an example of basic usage.
      */
-    public Template getTemplate(String name) throws IOException {
-        Locale loc = getLocale();
-        return getTemplate(name, loc, getEncoding(loc), true);
+    public Template getTemplate(String name)
+            throws TemplateNotFoundException, MalformedTemplateNameException, ParseException, IOException {
+        return getTemplate(name, null, null, null, true, false);
     }
 
     /**
-     * Shorthand for {@link #getTemplate(String, Locale, String, boolean, boolean)
-     * getTemplate(name, locale, getEncoding(locale), true, false)}.
+     * Shorthand for {@link #getTemplate(String, Locale, Object, String, boolean, boolean)
+     * getTemplate(name, locale, null, null, true, false)}.
      */
-    public Template getTemplate(String name, Locale locale) throws IOException {
-        return getTemplate(name, locale, getEncoding(locale), true);
+    public Template getTemplate(String name, Locale locale)
+            throws TemplateNotFoundException, MalformedTemplateNameException, ParseException, IOException {
+        return getTemplate(name, locale, null, null, true, false);
     }
 
     /**
-     * Shorthand for {@link #getTemplate(String, Locale, String, boolean, boolean)
-     * getTemplate(name, getLocale(), encoding, true, false)}.
+     * Shorthand for {@link #getTemplate(String, Locale, Object, String, boolean, boolean)
+     * getTemplate(name, null, null, encoding, true, false)}.
      */
-    public Template getTemplate(String name, String encoding) throws IOException {
-        return getTemplate(name, getLocale(), encoding, true);
+    public Template getTemplate(String name, String encoding)
+            throws TemplateNotFoundException, MalformedTemplateNameException, ParseException, IOException {
+        return getTemplate(name, null, null, encoding, true, false);
     }
 
     /**
-     * Shorthand for {@link #getTemplate(String, Locale, String, boolean, boolean)
-     * getTemplate(name, locale, encoding, true, false)}.
+     * Shorthand for {@link #getTemplate(String, Locale, Object, String, boolean, boolean)
+     * getTemplate(name, locale, null, encoding, true, false)}.
      */
-    public Template getTemplate(String name, Locale locale, String encoding) throws IOException {
-        return getTemplate(name, locale, encoding, true);
+    public Template getTemplate(String name, Locale locale, String encoding)
+            throws TemplateNotFoundException, MalformedTemplateNameException, ParseException, IOException {
+        return getTemplate(name, locale, null, encoding, true, false);
     }
     
     /**
-     * Shorthand for {@link #getTemplate(String, Locale, String, boolean, boolean)
-     * getTemplate(name, locale, encoding, parseAsFTL, false)}.
+     * Shorthand for {@link #getTemplate(String, Locale, Object, String, boolean, boolean)
+     * getTemplate(name, locale, null, encoding, parseAsFTL, false)}.
      */
-    public Template getTemplate(String name, Locale locale, String encoding, boolean parseAsFTL) throws IOException {
-        return getTemplate(name, locale, encoding, parseAsFTL, false);
+    public Template getTemplate(String name, Locale locale, String encoding, boolean parseAsFTL)
+            throws TemplateNotFoundException, MalformedTemplateNameException, ParseException, IOException {
+        return getTemplate(name, locale, null, encoding, parseAsFTL, false);
     }
 
     /**
-     * Retrieves the template with the given name (and according the specified further parameters) from the template
-     * cache, loading it into the cache first if it's missing/staled.
-     * 
-     * <p>This method is thread-safe. 
-     * 
-     * <p>See {@link Configuration} for an example of basic usage.
-     *
-     * @param name The name or path of the template, which is not a real path,
-     *     but interpreted inside the current {@link TemplateLoader}.
-     *     Can't be {@code null}. The exact syntax of the name
-     *     is interpreted by the underlying {@link TemplateLoader}, but the
-     *     cache makes some assumptions. First, the name is expected to be
-     *     a hierarchical path, with path components separated by a slash
-     *     character (not with backslash!). The path (the name) given here must <em>not</em> begin with slash;
-     *     it's always interpreted relative to the "template root directory".
-     *     Then, the {@code ..} and {@code .} path meta-elements will be resolved.
-     *     For example, if the name is {@code a/../b/./c.ftl}, then it will be
-     *     simplified to {@code b/c.ftl}. The rules regarding this are the same as with conventional
-     *     UN*X paths. The path must not reach outside the template root directory, that is,
-     *     it can't be something like {@code "../templates/my.ftl"} (not even if this path
-     *     happens to be equivalent with {@code "/my.ftl"}).
-     *     Further, the path is allowed to contain at most
-     *     one path element whose name is {@code *} (asterisk). This path meta-element triggers the
-     *     <i>acquisition mechanism</i>. If the template is not found in
-     *     the location described by the concatenation of the path left to the
-     *     asterisk (called base path) and the part to the right of the asterisk
-     *     (called resource path), the cache will attempt to remove the rightmost
-     *     path component from the base path ("go up one directory") and concatenate
-     *     that with the resource path. The process is repeated until either a
-     *     template is found, or the base path is completely exhausted.
-     *
-     * @param locale The requested locale of the template. Can't be {@code null}.
-     *     Assuming you have specified {@code en_US} as the locale and
-     *     {@code myTemplate.ftl} as the name of the template, the cache will
-     *     first try to retrieve {@code myTemplate_en_US.html}, then
-     *     {@code myTemplate.en.ftl}, and finally {@code myTemplate.ftl}.
-     *
-     * @param encoding The charset used to interpret the template source code bytes. Can't be {@code null}.
-     *
-     * @param parseAsFTL If {@code true}, the loaded template is parsed and interpreted normally,
-     *     as a regular FreeMarker template. If {@code false}, the loaded template is
-     *     treated as a static text, so <code>${...}</code>, {@code <#...>} etc. will not have special meaning
-     *     in it.
-     *     
-     * @param ignoreMissing If {@code true}, the method won't throw {@link FileNotFoundException} if the template
-     *     doesn't exist, instead it returns {@code null}. Other kind of exceptions won't be suppressed.
-     * 
-     * @return the requested template; maybe {@code null} when the {@code ignoreMissing} parameter is {@code true}.
-     * 
-     * @throws FileNotFoundException if the template could not be found.
-     * @throws IOException if there was a problem loading the template.
-     * @throws ParseException (extends <code>IOException</code>) if the template is syntactically bad.
+     * Shorthand for {@link #getTemplate(String, Locale, Object, String, boolean, boolean)
+     * getTemplate(name, locale, null, encoding, parseAsFTL, ignoreMissing)}.
      * 
      * @since 2.3.21
      */
     public Template getTemplate(String name, Locale locale, String encoding, boolean parseAsFTL, boolean ignoreMissing)
-            throws IOException {
-        Template result = cache.getTemplate(name, locale, encoding, parseAsFTL);
-        if (result == null) {
+            throws TemplateNotFoundException, MalformedTemplateNameException, ParseException, IOException {
+        return getTemplate(name, locale, null, encoding, parseAsFTL, ignoreMissing);
+    }
+    
+    /**
+     * Retrieves the template with the given name (and according the specified further parameters) from the template
+     * cache, loading it into the cache first if it's missing/staled.
+     * 
+     * <p>
+     * This method is thread-safe.
+     * 
+     * <p>
+     * See {@link Configuration} for an example of basic usage.
+     *
+     * @param name
+     *            The name or path of the template, which is not a real path, but interpreted inside the current
+     *            {@link TemplateLoader}. Can't be {@code null}. The exact syntax of the name depends on the underlying
+     *            {@link TemplateLoader}, but the cache makes some assumptions. First, the name is expected to be a
+     *            hierarchical path, with path components separated by a slash character (not with backslash!). The path
+     *            (the name) given here must <em>not</em> begin with slash; it's always interpreted relative to the
+     *            "template root directory". Then, the {@code ..} and {@code .} path meta-elements will be resolved. For
+     *            example, if the name is {@code a/../b/./c.ftl}, then it will be simplified to {@code b/c.ftl}. The
+     *            rules regarding this are the same as with conventional UN*X paths. The path must not reach outside the
+     *            template root directory, that is, it can't be something like {@code "../templates/my.ftl"} (not even
+     *            if this path happens to be equivalent with {@code "/my.ftl"}). Furthermore, the path is allowed to
+     *            contain at most one path element whose name is {@code *} (asterisk). This path meta-element triggers
+     *            the <i>acquisition mechanism</i>. If the template is not found in the location described by the
+     *            concatenation of the path left to the asterisk (called base path) and the part to the right of the
+     *            asterisk (called resource path), the cache will attempt to remove the rightmost path component from
+     *            the base path ("go up one directory") and concatenate that with the resource path. The process is
+     *            repeated until either a template is found, or the base path is completely exhausted.
+     *
+     * @param locale
+     *            The requested locale of the template. This is what {@link Template#getLocale()} on the resulting
+     *            {@link Template} will return (unless it's overridden via {@link #getTemplateConfigurers()}). This
+     *            parameter can be {@code null} since 2.3.22, in which case it defaults to
+     *            {@link Configuration#getLocale()} (note that {@link Template#getLocale()} will give the default value,
+     *            not {@code null}). This parameter also drives localized template lookup. Assuming that you have
+     *            specified {@code en_US} as the locale and {@code myTemplate.ftl} as the name of the template, and the
+     *            default {@link TemplateLookupStrategy} is used and
+     *            {@code #setLocalizedLookup(boolean) localized_lookup} is {@code true}, FreeMarker will first try to
+     *            retrieve {@code myTemplate_en_US.html}, then {@code myTemplate.en.ftl}, and finally
+     *            {@code myTemplate.ftl}. Note that that the template's locale will be {@code en_US} even if it only
+     *            finds {@code myTemplate.ftl}. Note that when the {@code locale} setting is overridden with a
+     *            {@link TemplateConfigurer} provided by {@link #getTemplateConfigurers()}, that overrides the
+     *            value specified here, but only after the localized lookup, that is, it modifies the template
+     *            found by the localized lookup.
+     * 
+     * @param customLookupCondition
+     *            This value can be used by a custom {@link TemplateLookupStrategy}; has no effect with the default one.
+     *            Can be {@code null} (though it's up to the custom {@link TemplateLookupStrategy} if it allows that).
+     *            This object will be used as part of the cache key, so it must to have a proper
+     *            {@link Object#equals(Object)} and {@link Object#hashCode()} method. It also should have reasonable
+     *            {@link Object#toString()}, as it's possibly quoted in error messages. The expected type is up to the
+     *            custom {@link TemplateLookupStrategy}. See also:
+     *            {@link TemplateLookupContext#getCustomLookupCondition()}.
+     *
+     * @param encoding
+     *            Deprecated mechanism, {@code null} is the recommended; the charset used to interpret the template
+     *            source code bytes (if it's read from a binary source). Can be {@code null} since 2.3.22, in which case
+     *            it will default to {@link Configuration#getEncoding(Locale)} where {@code Locale} is the
+     *            {@code locale} parameter (when {@code locale} was {@code null} too, the its default value is used
+     *            instead). Why is this deprecated: It doesn't make sense to get the <em>same</em> template with
+     *            different encodings, hence, it's error prone to specify the encoding where you get the template.
+     *            Instead, if you have template "files" with different charsets, you should use
+     *            {@link #setTemplateConfigurers(TemplateConfigurerFactory)}, where you can associate encodings to
+     *            individual templates based on their names (like which "directory" are they in, what's their file
+     *            extension, etc.). The encoding associated with the templates that way overrides the encoding that you
+     *            specify here.
+     *
+     * @param parseAsFTL
+     *            If {@code true}, the loaded template is parsed and interpreted normally, as a regular FreeMarker
+     *            template. If {@code false}, the loaded template is treated as a static text, so <code>${...}</code>,
+     *            {@code <#...>} etc. will not have special meaning in it.
+     * 
+     * @param ignoreMissing
+     *            If {@code true}, the method won't throw {@link TemplateNotFoundException} if the template doesn't
+     *            exist, instead it returns {@code null}. Other kind of exceptions won't be suppressed.
+     * 
+     * @return the requested template; maybe {@code null} when the {@code ignoreMissing} parameter is {@code true}.
+     * 
+     * @throws TemplateNotFoundException
+     *             If the template could not be found. Note that this exception extends {@link IOException}.
+     * @throws MalformedTemplateNameException
+     *             If the template name given was in violation with the {@link TemplateNameFormat} in use. Note that
+     *             this exception extends {@link IOException}.
+     * @throws ParseException
+     *             (extends <code>IOException</code>) if the template is syntactically bad. Note that this exception
+     *             extends {@link IOException}.
+     * @throws IOException
+     *             If there was some other problem with reading the template "file". Note that the other exceptions
+     *             extend {@link IOException}, so this should be catched the last.
+     * 
+     * @since 2.3.22
+     */
+    public Template getTemplate(String name, Locale locale, Object customLookupCondition,
+            String encoding, boolean parseAsFTL, boolean ignoreMissing)
+            throws TemplateNotFoundException, MalformedTemplateNameException, ParseException, IOException {
+        if (locale == null) {
+            locale = getLocale();
+        }
+        if (encoding == null) {
+            encoding = getEncoding(locale);
+        }
+        
+        final MaybeMissingTemplate maybeTemp = cache.getTemplate(name, locale, customLookupCondition, encoding, parseAsFTL);
+        final Template temp = maybeTemp.getTemplate();
+        if (temp == null) {
             if (ignoreMissing) {
                 return null;
             }
@@ -966,28 +2330,67 @@ public class Configuration extends Configurable implements Cloneable {
             String msg; 
             if (tl == null) {
                 msg = "Don't know where to load template " + StringUtil.jQuote(name)
-                      + " from because the \"template_loader\" FreeMarker setting wasn't set.";
+                      + " from because the \"template_loader\" FreeMarker "
+                      + "setting wasn't set (Configuration.setTemplateLoader), so it's null.";
             } else {
-                msg = "Template " + StringUtil.jQuote(name) + " not found. "
-                        + "The quoted name was interpreted by this template loader: ";
-                String tlDesc;
-                try {
-                    tlDesc = tl.toString();
-                } catch (Throwable e) {
-                    tlDesc = tl.getClass().getName() + " object (toString failed)";
-                }
-                msg += tlDesc + ".";
-                
-                if (!templateLoaderWasSet) {
-                    msg += " Note that the \"template_loader\" FreeMarker setting wasn't set, so it's on its "
-                            + "default value, which is most certainly not intended and the cause of this problem."; 
-                }
+                final String missingTempNormName = maybeTemp.getMissingTemplateNormalizedName();
+                final String missingTempReason = maybeTemp.getMissingTemplateReason();
+                final TemplateLookupStrategy templateLookupStrategy = getTemplateLookupStrategy();
+                msg = "Template not found for name " + StringUtil.jQuote(name)
+                        + (missingTempNormName != null && name != null
+                                && !removeInitialSlash(name).equals(missingTempNormName)
+                                ? " (normalized: " + StringUtil.jQuote(missingTempNormName) + ")"
+                                : "")
+                        + (customLookupCondition != null ? " and custom lookup condition "
+                        + StringUtil.jQuote(customLookupCondition) : "")
+                        + "."
+                        + (missingTempReason != null
+                                ? "\nReason given: " + ensureSentenceIsClosed(missingTempReason)
+                                : "")
+                        + "\nThe name was interpreted by this TemplateLoader: "
+                        + StringUtil.tryToString(tl) + "."
+                        + (!isKnownNonConfusingLookupStrategy(templateLookupStrategy)
+                                ? "\n(Before that, the name was possibly changed by this lookup strategy: "
+                                  + StringUtil.tryToString(templateLookupStrategy) + ".)"
+                                : "")
+                        // Suspected reasons or warning:
+                        + (!templateLoaderExplicitlySet
+                                ? "\nWarning: The \"template_loader\" FreeMarker setting "
+                                  + "wasn't set (Configuration.setTemplateLoader), and using the default value "
+                                  + "is most certainly not intended and dangerous, and can be the cause of this error."
+                                : "")
+                        + (missingTempReason == null && name.indexOf('\\') != -1
+                                ? "\nWarning: The name contains backslash (\"\\\") instead of slash (\"/\"); "
+                                    + "template names should use slash only."
+                                : "");
             }
-            throw new FileNotFoundException(msg);
+            
+            String normName = maybeTemp.getMissingTemplateNormalizedName();
+            throw new TemplateNotFoundException(
+                    normName != null ? normName : name,
+                    customLookupCondition,
+                    msg);
         }
-        return result;
+        return temp;
     }
     
+    private boolean isKnownNonConfusingLookupStrategy(TemplateLookupStrategy templateLookupStrategy) {
+        return templateLookupStrategy == TemplateLookupStrategy.DEFAULT_2_3_0;
+    }
+
+    private String removeInitialSlash(String name) {
+        return name.startsWith("/") ? name.substring(1) : name;
+    }
+
+    private String ensureSentenceIsClosed(String s) {
+        if (s == null || s.length() == 0) {
+            return s;
+        }
+        
+        final char lastChar = s.charAt(s.length() - 1);
+        return lastChar == '.' || lastChar == '!' || lastChar == '?' ? s : s + ".";
+    }
+
     /**
      * Sets the charset used for decoding byte sequences to character sequences when
      * reading template files in a locale for which no explicit encoding
@@ -999,7 +2402,7 @@ public class Configuration extends Configurable implements Cloneable {
      * {@code "UTF-8"} is usually a good choice.
      * 
      * <p>Note that individual templates may specify their own charset by starting with
-     * <tt>&lt;#ftl encoding="..."></tt>
+     * <tt>&lt;#ftl encoding="..."&gt;</tt>
      * 
      * @param encoding The name of the charset, such as {@code "UTF-8"} or {@code "ISO-8859-1"}
      */
@@ -1010,7 +2413,7 @@ public class Configuration extends Configurable implements Cloneable {
     /**
      * Gets the default encoding for converting bytes to characters when
      * reading template files in a locale for which no explicit encoding
-     * was specified. Defaults to default system encoding.
+     * was specified. Defaults to the default system encoding.
      */
     public String getDefaultEncoding() {
         return defaultEncoding;
@@ -1043,7 +2446,6 @@ public class Configuration extends Configurable implements Cloneable {
             }
             return charset != null ? charset : defaultEncoding;
         }
-        
     }
 
     /**
@@ -1144,7 +2546,7 @@ public class Configuration extends Configurable implements Cloneable {
 
     private void setSharedVariablesFromRewrappableSharedVariables() throws TemplateModelException {
         if (rewrappableSharedVariables == null) return;
-        for (Iterator it = rewrappableSharedVariables.entrySet().iterator(); it.hasNext();) {
+        for (Iterator it = rewrappableSharedVariables.entrySet().iterator(); it.hasNext(); ) {
             Map.Entry/*<String, Object>*/ ent = (Entry) it.next();
             String name = (String) ent.getKey();
             Object value = ent.getValue();
@@ -1174,15 +2576,15 @@ public class Configuration extends Configurable implements Cloneable {
      * If a shared variable with these names already exist, it will be replaced
      * with those from the map.
      *
+     * @see #setSharedVaribles(Map)
      * @see #setSharedVariable(String,Object)
      * @see #setSharedVariable(String,TemplateModel)
      */
     public void setAllSharedVariables(TemplateHashModelEx hash) throws TemplateModelException {
         TemplateModelIterator keys = hash.keys().iterator();
         TemplateModelIterator values = hash.values().iterator();
-        while(keys.hasNext())
-        {
-            setSharedVariable(((TemplateScalarModel)keys.next()).getAsString(), values.next());
+        while (keys.hasNext()) {
+            setSharedVariable(((TemplateScalarModel) keys.next()).getAsString(), values.next());
         }
     }
     
@@ -1284,17 +2686,29 @@ public class Configuration extends Configurable implements Cloneable {
     /**
      * Enables/disables localized template lookup. Enabled by default.
      * 
-     * <p>Localized lookup works like this: Let's say your locale setting is "en_AU", and you call
-     * {@link Configuration#getTemplate(String) cfg.getTemplate("foo.ftl")}. Then FreeMarker will look for the template
-     * under names, stopping at the first that exists: {@code "foo_en_AU.ftl"}, {@code "foo_en.ftl"}, {@code "foo.ftl"}.
+     * <p>
+     * With the default {@link TemplateLookupStrategy}, localized lookup works like this: Let's say your locale setting
+     * is {@code Locale("en", "AU")}, and you call {@link Configuration#getTemplate(String) cfg.getTemplate("foo.ftl")}.
+     * Then FreeMarker will look for the template under these names, stopping at the first that exists:
+     * {@code "foo_en_AU.ftl"}, {@code "foo_en.ftl"}, {@code "foo.ftl"}. See the description of the default value at
+     * {@link #setTemplateLookupStrategy(TemplateLookupStrategy)} for a more details. If you need to generate different
+     * template names, use {@link #setTemplateLookupStrategy(TemplateLookupStrategy)} with your custom
+     * {@link TemplateLookupStrategy}.
      * 
-     * <p>This method is thread-safe and can be called while the engine works.
+     * <p>Note that changing the value of this setting causes the template cache to be emptied so that old lookup
+     * results won't be reused (since 2.3.22). 
+     * 
+     * <p>
+     * Historical note: Despite what the API documentation said earlier, this method is <em>not</em> thread-safe. While
+     * setting it can't cause any serious problems, and in fact it works well on most hardware, it's not guaranteed that
+     * FreeMarker will see the update in all threads.
      */
     public void setLocalizedLookup(boolean localizedLookup) {
         this.localizedLookup = localizedLookup;
         cache.setLocalizedLookup(localizedLookup);
     }
     
+    @Override
     public void setSetting(String name, String value) throws TemplateException {
         boolean unknown = false;
         try {
@@ -1304,16 +2718,55 @@ public class Configuration extends Configurable implements Cloneable {
                 name = DEFAULT_ENCODING_KEY;
             }
             
-            if (DEFAULT_ENCODING_KEY.equals(name)) {
+            if (DEFAULT_ENCODING_KEY_SNAKE_CASE.equals(name) || DEFAULT_ENCODING_KEY_CAMEL_CASE.equals(name)) {
                 setDefaultEncoding(value);
-            } else if (LOCALIZED_LOOKUP_KEY.equals(name)) {
+            } else if (LOCALIZED_LOOKUP_KEY_SNAKE_CASE.equals(name) || LOCALIZED_LOOKUP_KEY_CAMEL_CASE.equals(name)) {
                 setLocalizedLookup(StringUtil.getYesNo(value));
-            } else if (STRICT_SYNTAX_KEY.equals(name)) {
+            } else if (STRICT_SYNTAX_KEY_SNAKE_CASE.equals(name) || STRICT_SYNTAX_KEY_CAMEL_CASE.equals(name)) {
                 setStrictSyntaxMode(StringUtil.getYesNo(value));
-            } else if (WHITESPACE_STRIPPING_KEY.equals(name)) {
+            } else if (WHITESPACE_STRIPPING_KEY_SNAKE_CASE.equals(name)
+                    || WHITESPACE_STRIPPING_KEY_CAMEL_CASE.equals(name)) {
                 setWhitespaceStripping(StringUtil.getYesNo(value));
-            } else if (CACHE_STORAGE_KEY.equals(name)) {
-                if (value.indexOf('.') == -1) {
+            } else if (AUTO_ESCAPING_POLICY_KEY_SNAKE_CASE.equals(name) || AUTO_ESCAPING_POLICY_KEY_CAMEL_CASE.equals(name)) {
+                if ("enable_if_default".equals(value) || "enableIfDefault".equals(value)) {
+                    setAutoEscapingPolicy(ENABLE_IF_DEFAULT_AUTO_ESCAPING_POLICY);
+                } else if ("enable_if_supported".equals(value) || "enableIfSupported".equals(value)) {
+                    setAutoEscapingPolicy(ENABLE_IF_SUPPORTED_AUTO_ESCAPING_POLICY);
+                } else if ("disable".equals(value)) {
+                    setAutoEscapingPolicy(DISABLE_AUTO_ESCAPING_POLICY);
+                } else {
+                    throw invalidSettingValueException(name, value);
+                }
+            } else if (OUTPUT_FORMAT_KEY_SNAKE_CASE.equals(name) || OUTPUT_FORMAT_KEY_CAMEL_CASE.equals(name)) {
+                if (value.equalsIgnoreCase(DEFAULT)) {
+                    unsetOutputFormat();
+                } else {
+                    setOutputFormat((OutputFormat) _ObjectBuilderSettingEvaluator.eval(
+                            value, OutputFormat.class, true, _SettingEvaluationEnvironment.getCurrent()));
+                }
+            } else if (REGISTERED_CUSTOM_OUTPUT_FORMATS_KEY_SNAKE_CASE.equals(name)
+                    || REGISTERED_CUSTOM_OUTPUT_FORMATS_KEY_CAMEL_CASE.equals(name)) {
+                List list = (List) _ObjectBuilderSettingEvaluator.eval(
+                        value, List.class, true, _SettingEvaluationEnvironment.getCurrent());
+                for (Object item : list) {
+                    if (!(item instanceof OutputFormat)) {
+                        throw new _MiscTemplateException(getEnvironment(),
+                                "Invalid value for setting ", new _DelayedJQuote(name), ": List items must be "
+                                + OutputFormat.class.getName() + " intances, in: ", value);
+                    }
+                }
+                setRegisteredCustomOutputFormats(list);
+            } else if (RECOGNIZE_STANDARD_FILE_EXTENSIONS_KEY_SNAKE_CASE.equals(name)
+                    || RECOGNIZE_STANDARD_FILE_EXTENSIONS_KEY_CAMEL_CASE.equals(name)) {
+                if (value.equalsIgnoreCase(DEFAULT)) {
+                    unsetRecognizeStandardFileExtensions();
+                } else {
+                    setRecognizeStandardFileExtensions(StringUtil.getYesNo(value));
+                }
+            } else if (CACHE_STORAGE_KEY_SNAKE_CASE.equals(name) || CACHE_STORAGE_KEY_CAMEL_CASE.equals(name)) {
+                if (value.equalsIgnoreCase(DEFAULT)) {
+                    unsetCacheStorage();
+                } if (value.indexOf('.') == -1) {
                     int strongSize = 0;
                     int softSize = 0;
                     Map map = StringUtil.parseNameValuePairList(
@@ -1342,35 +2795,97 @@ public class Configuration extends Configurable implements Cloneable {
                     setCacheStorage(new MruCacheStorage(strongSize, softSize));
                 } else {
                     setCacheStorage((CacheStorage) _ObjectBuilderSettingEvaluator.eval(
-                            value, CacheStorage.class, _SettingEvaluationEnvironment.getCurrent()));
+                            value, CacheStorage.class, false, _SettingEvaluationEnvironment.getCurrent()));
                 }
-            } else if (TEMPLATE_UPDATE_DELAY_KEY.equals(name)) {
-                setTemplateUpdateDelay(Integer.parseInt(value));
-            } else if (AUTO_INCLUDE_KEY.equals(name)) {
+            } else if (TEMPLATE_UPDATE_DELAY_KEY_SNAKE_CASE.equals(name)
+                    || TEMPLATE_UPDATE_DELAY_KEY_CAMEL_CASE.equals(name)) {
+                long multipier;
+                String valueWithoutUnit;
+                if (value.endsWith("ms")) {
+                    multipier = 1;
+                    valueWithoutUnit = rightTrim(value.substring(0, value.length() - 2));
+                } else if (value.endsWith("s")) {
+                    multipier = 1000;
+                    valueWithoutUnit = rightTrim(value.substring(0, value.length() - 1));
+                } else if (value.endsWith("m")) {
+                    multipier = 1000 * 60;
+                    valueWithoutUnit = rightTrim(value.substring(0, value.length() - 1));
+                } else if (value.endsWith("h")) {
+                    multipier = 1000 * 60 * 60;
+                    valueWithoutUnit = rightTrim(value.substring(0, value.length() - 1));
+                } else {
+                    multipier = 1000;  // Default is seconds for backward compatibility
+                    valueWithoutUnit = value;
+                }
+                setTemplateUpdateDelayMilliseconds(Integer.parseInt(valueWithoutUnit) * multipier);
+            } else if (AUTO_INCLUDE_KEY_SNAKE_CASE.equals(name)
+                    || AUTO_INCLUDE_KEY_CAMEL_CASE.equals(name)) {
                 setAutoIncludes(parseAsList(value));
-            } else if (AUTO_IMPORT_KEY.equals(name)) {
+            } else if (AUTO_IMPORT_KEY_SNAKE_CASE.equals(name) || AUTO_IMPORT_KEY_CAMEL_CASE.equals(name)) {
                 setAutoImports(parseAsImportList(value));
-            } else if (TAG_SYNTAX_KEY.equals(name)) {
-                if ("auto_detect".equals(value)) {
+            } else if (TAG_SYNTAX_KEY_SNAKE_CASE.equals(name) || TAG_SYNTAX_KEY_CAMEL_CASE.equals(name)) {
+                if ("auto_detect".equals(value) || "autoDetect".equals(value)) {
                     setTagSyntax(AUTO_DETECT_TAG_SYNTAX);
-                } else if ("angle_bracket".equals(value)) {
+                } else if ("angle_bracket".equals(value) || "angleBracket".equals(value)) {
                     setTagSyntax(ANGLE_BRACKET_TAG_SYNTAX);
-                } else if ("square_bracket".equals(value)) {
+                } else if ("square_bracket".equals(value) || "squareBracket".equals(value)) {
                     setTagSyntax(SQUARE_BRACKET_TAG_SYNTAX);
                 } else {
                     throw invalidSettingValueException(name, value);
                 }
-            } else if (INCOMPATIBLE_IMPROVEMENTS.equals(name)) {
+            } else if (NAMING_CONVENTION_KEY_SNAKE_CASE.equals(name) || NAMING_CONVENTION_KEY_CAMEL_CASE.equals(name)) {
+                if ("auto_detect".equals(value) || "autoDetect".equals(value)) {
+                    setNamingConvention(AUTO_DETECT_NAMING_CONVENTION);
+                } else if ("legacy".equals(value)) {
+                    setNamingConvention(LEGACY_NAMING_CONVENTION);
+                } else if ("camel_case".equals(value) || "camelCase".equals(value)) {
+                    setNamingConvention(CAMEL_CASE_NAMING_CONVENTION);
+                } else {
+                    throw invalidSettingValueException(name, value);
+                }
+            } else if (INCOMPATIBLE_IMPROVEMENTS_KEY_SNAKE_CASE.equals(name)
+                    || INCOMPATIBLE_IMPROVEMENTS_KEY_CAMEL_CASE.equals(name)) {
                 setIncompatibleImprovements(new Version(value));
             } else if (INCOMPATIBLE_ENHANCEMENTS.equals(name)) {
                 setIncompatibleEnhancements(value);
-            } else if (TEMPLATE_LOADER_KEY.equals(name)) {
-                setTemplateLoader((TemplateLoader) _ObjectBuilderSettingEvaluator.eval(
-                        value, TemplateLoader.class, _SettingEvaluationEnvironment.getCurrent()));
+            } else if (TEMPLATE_LOADER_KEY_SNAKE_CASE.equals(name) || TEMPLATE_LOADER_KEY_CAMEL_CASE.equals(name)) {
+                if (value.equalsIgnoreCase(DEFAULT)) {
+                    unsetTemplateLoader();
+                } else {
+                    setTemplateLoader((TemplateLoader) _ObjectBuilderSettingEvaluator.eval(
+                            value, TemplateLoader.class, false, _SettingEvaluationEnvironment.getCurrent()));
+                }
+            } else if (TEMPLATE_LOOKUP_STRATEGY_KEY_SNAKE_CASE.equals(name)
+                    || TEMPLATE_LOOKUP_STRATEGY_KEY_CAMEL_CASE.equals(name)) {
+                if (value.equalsIgnoreCase(DEFAULT)) {
+                    unsetTemplateLookupStrategy();
+                } else {
+                    setTemplateLookupStrategy((TemplateLookupStrategy) _ObjectBuilderSettingEvaluator.eval(
+                            value, TemplateLookupStrategy.class, false, _SettingEvaluationEnvironment.getCurrent()));
+                }
+            } else if (TEMPLATE_NAME_FORMAT_KEY_SNAKE_CASE.equals(name)
+                    || TEMPLATE_NAME_FORMAT_KEY_CAMEL_CASE.equals(name)) {
+                if (value.equalsIgnoreCase(DEFAULT)) {
+                    unsetTemplateNameFormat();
+                } else if (value.equalsIgnoreCase("default_2_3_0")) {
+                    setTemplateNameFormat(TemplateNameFormat.DEFAULT_2_3_0);
+                } else if (value.equalsIgnoreCase("default_2_4_0")) {
+                    setTemplateNameFormat(TemplateNameFormat.DEFAULT_2_4_0);
+                } else {
+                    throw invalidSettingValueException(name, value);
+                }
+            } else if (TEMPLATE_CONFIGURERS_KEY_SNAKE_CASE.equals(name)
+                    || TEMPLATE_CONFIGURERS_KEY_CAMEL_CASE.equals(name)) {
+                if (value.equals(NULL)) {
+                    setTemplateConfigurers(null);
+                } else {
+                    setTemplateConfigurers((TemplateConfigurerFactory) _ObjectBuilderSettingEvaluator.eval(
+                            value, TemplateConfigurerFactory.class, false, _SettingEvaluationEnvironment.getCurrent()));
+                }
             } else {
                 unknown = true;
             }
-        } catch(Exception e) {
+        } catch (Exception e) {
             throw settingValueAssignmentException(name, value, e);
         }
         if (unknown) {
@@ -1378,9 +2893,41 @@ public class Configuration extends Configurable implements Cloneable {
         }
     }
 
+    private String rightTrim(String s) {
+        int ln = s.length();
+        while (ln > 0 && Character.isWhitespace(s.charAt(ln - 1))) {
+            ln--;
+        }
+        return s.substring(0, ln);
+    }
+
+    /**
+     * Returns the valid {@link Configuration} setting names. Naturally, this includes the {@link Configurable} setting
+     * names too.
+     * 
+     * @param camelCase
+     *            If we want the setting names with camel case naming convention, or with snake case (legacy) naming
+     *            convention.
+     * 
+     * @see Configurable#getSettingNames(boolean)
+     * 
+     * @since 2.3.24
+     */
+    @Override
+    public Set<String> getSettingNames(boolean camelCase) {
+        return new _UnmodifiableCompositeSet<String>(
+                super.getSettingNames(camelCase),
+                new _SortedArraySet<String>(camelCase ? SETTING_NAMES_CAMEL_CASE : SETTING_NAMES_SNAKE_CASE)); 
+    }
+    
+    @Override
     protected String getCorrectedNameForUnknownSetting(String name) {
         if ("encoding".equals(name) || "charset".equals(name) || "default_charset".equals(name)) {
+            // [2.4] Default might changes to camel-case
             return DEFAULT_ENCODING_KEY;
+        }
+        if ("defaultCharset".equals(name)) {
+            return DEFAULT_ENCODING_KEY_CAMEL_CASE;
         }
         return super.getCorrectedNameForUnknownSetting(name);
     }
@@ -1392,9 +2939,9 @@ public class Configuration extends Configurable implements Cloneable {
     public void addAutoImport(String namespaceVarName, String templateName) {
         // "synchronized" is removed from the API as it's not safe to set anything after publishing the Configuration
         synchronized (this) {
+            // This was a List earlier, so re-inserted items must go to the end, hence we remove() before put().
             autoImports.remove(namespaceVarName);
-            autoImports.add(namespaceVarName);
-            autoImportNsToTmpMap.put(namespaceVarName, templateName);
+            autoImports.put(namespaceVarName, templateName);
         }
     }
     
@@ -1406,7 +2953,6 @@ public class Configuration extends Configurable implements Cloneable {
         // "synchronized" is removed from the API as it's not safe to set anything after publishing the Configuration
         synchronized (this) {
             autoImports.remove(namespaceVarName);
-            autoImportNsToTmpMap.remove(namespaceVarName);
         }
     }
     
@@ -1419,29 +2965,31 @@ public class Configuration extends Configurable implements Cloneable {
     public void setAutoImports(Map map) {
         // "synchronized" is removed from the API as it's not safe to set anything after publishing the Configuration
         synchronized (this) {
-            autoImports = new ArrayList(map.keySet());
-            if (map instanceof HashMap) {
-                autoImportNsToTmpMap = (Map) ((HashMap) map).clone();
-            } 
-            else if (map instanceof SortedMap) {
-                autoImportNsToTmpMap = new TreeMap(map);             
-            }
-            else {
-                autoImportNsToTmpMap = new HashMap(map);
+            for (Map.Entry entry : ((Map<?, ?>) map).entrySet()) {
+                Object key = entry.getKey();
+                if (!(key instanceof String)) {
+                    throw new IllegalArgumentException(
+                            "Key in map wasn't a String, but a(n) " + key.getClass().getName() + ".");
+                }
+                Object value = entry.getValue();
+                if (!(value instanceof String)) {
+                    throw new IllegalArgumentException(
+                            "Value in map wasn't a String, but a(n) " + key.getClass().getName() + ".");
+                }
+                addAutoImport((String) key, (String) value);
             }
         }
     }
     
+    @Override
     protected void doAutoImportsAndIncludes(Environment env)
-    throws TemplateException, IOException
-    {
-        for (int i=0; i<autoImports.size(); i++) {
-            String namespace = (String) autoImports.get(i);
-            String templateName = (String) autoImportNsToTmpMap.get(namespace);
-            env.importLib(templateName, namespace);
+    throws TemplateException, IOException {
+        for (Map.Entry<String, String> autoImport : autoImports.entrySet()) {
+            // Template name 1st, namespace var 2nd.
+            env.importLib(autoImport.getValue(), autoImport.getKey());
         }
         for (int i = 0; i < autoIncludes.size(); i++) {
-            String templateName = (String) autoIncludes.get(i);
+            String templateName = autoIncludes.get(i);
             Template template = getTemplate(templateName, env.getLocale());
             env.include(template);
         }
@@ -1466,13 +3014,11 @@ public class Configuration extends Configurable implements Cloneable {
         // "synchronized" is removed from the API as it's not safe to set anything after publishing the Configuration
         synchronized (this) {
             autoIncludes.clear();
-            Iterator it = templateNames.iterator();
-            while (it.hasNext()) {
-                Object o = it.next();
-                if (!(o instanceof String)) {
+            for (Object templateName : templateNames) {
+                if (!(templateName instanceof String)) {
                     throw new IllegalArgumentException("List items must be String-s.");
                 }
-                autoIncludes.add(o);
+                autoIncludes.add((String) templateName);
             }
         }
     }
@@ -1493,8 +3039,9 @@ public class Configuration extends Configurable implements Cloneable {
      * 
      * @deprecated Use {@link #getVersion()} instead.
      */
+    @Deprecated
     public static String getVersionNumber() {
-        return version.toString();
+        return VERSION.toString();
     }
     
     /**
@@ -1526,7 +3073,7 @@ public class Configuration extends Configurable implements Cloneable {
      * @since 2.3.20
      */ 
     public static Version getVersion() {
-        return version;
+        return VERSION;
     }
     
     /**
@@ -1540,7 +3087,7 @@ public class Configuration extends Configurable implements Cloneable {
         if (incompatibleImprovements.intValue() < _TemplateAPI.VERSION_INT_2_3_21) {
             return ObjectWrapper.DEFAULT_WRAPPER;
         } else {
-            return new DefaultObjectWrapperBuilder(incompatibleImprovements).getResult();
+            return new DefaultObjectWrapperBuilder(incompatibleImprovements).build();
         }
     }
 
@@ -1559,7 +3106,7 @@ public class Configuration extends Configurable implements Cloneable {
     
     /**
      * Returns the names of the directives that are predefined by FreeMarker. These are the things that you call like
-     * <tt>&lt;#directiveName ...></tt>.
+     * <tt>&lt;#directiveName ...&gt;</tt>.
      * 
      * @return {@link Set} of {@link String}-s.
      * 

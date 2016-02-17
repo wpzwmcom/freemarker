@@ -15,3 +15,22 @@ ${beansArray?substring(0, 18)}  <- All BeanModel-s were strings; not anymore
 ${beansArray?string?substring(0, 18)}
 ${beansArray?replace('j.v.', 'cofe', 'r')?substring(0, 18)}
 ${beansArray?seq_index_of("b")}
+
+<#list ['a', 'b'] as x>${x}</#list>
+<#list ['a'] as x>${x}</#list>
+<#list 'a' as x>${x}</#list>
+<#list 'a' as x>${x}<#break>b</#list>
+
+<#assign x = 1>
+<#assign x = x + 1>
+${x}
+<#assign x = x + noSuchVar>
+${x}
+<#assign x += noSuchVar>
+${x}
+<@assertFails messageRegexp="(?s).*null or missing.*"><#assign noSuchVar = noSuchVar - 1></@>
+<@assertFails messageRegexp="(?s)(?=.*noSuchVar).*assignment.*null or missing.*"><#assign noSuchVar -= 1></@>
+<@assertFails messageRegexp="(?s)(?=.*noSuchVar).*assignment.*null or missing.*"><#assign noSuchVar--></@>
+<@assertFails messageRegexp="(?s)(?=.*noSuchVar).*assignment.*null or missing.*"><#assign noSuchVar++></@>
+<#assign noSuchVar = noSuchVar + 1>
+${noSuchVar}<#-- noSuchVar is "1" string here -->

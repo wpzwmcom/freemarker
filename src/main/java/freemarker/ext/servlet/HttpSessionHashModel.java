@@ -31,8 +31,7 @@ import freemarker.template.TemplateModelException;
  * TemplateHashModel wrapper for a HttpSession attributes.
  */
 
-public final class HttpSessionHashModel implements TemplateHashModel, Serializable
-{
+public final class HttpSessionHashModel implements TemplateHashModel, Serializable {
     private static final long serialVersionUID = 1L;
     private transient HttpSession session;
     private transient final ObjectWrapper wrapper;
@@ -47,8 +46,7 @@ public final class HttpSessionHashModel implements TemplateHashModel, Serializab
      * @param session the session
      * @param wrapper an object wrapper used to wrap session attributes
      */
-    public HttpSessionHashModel(HttpSession session, ObjectWrapper wrapper)
-    {
+    public HttpSessionHashModel(HttpSession session, ObjectWrapper wrapper) {
         this.session = session;
         this.wrapper = wrapper;
 
@@ -68,8 +66,7 @@ public final class HttpSessionHashModel implements TemplateHashModel, Serializab
      * @param response the actual response
      * @param wrapper an object wrapper used to wrap session attributes
      */
-    public HttpSessionHashModel(FreemarkerServlet servlet, HttpServletRequest request, HttpServletResponse response, ObjectWrapper wrapper)
-    {
+    public HttpSessionHashModel(FreemarkerServlet servlet, HttpServletRequest request, HttpServletResponse response, ObjectWrapper wrapper) {
         this.wrapper = wrapper;
         
         this.servlet = servlet;
@@ -77,41 +74,34 @@ public final class HttpSessionHashModel implements TemplateHashModel, Serializab
         this.response = response;
     }
 
-    public TemplateModel get(String key) throws TemplateModelException
-    {
+    public TemplateModel get(String key) throws TemplateModelException {
         checkSessionExistence();
         return wrapper.wrap(session != null ? session.getAttribute(key) : null);
     }
 
-    private void checkSessionExistence() throws TemplateModelException
-    {
-        if(session == null && request != null) {
+    private void checkSessionExistence() throws TemplateModelException {
+        if (session == null && request != null) {
             session = request.getSession(false);
-            if(session != null && servlet != null) {
+            if (session != null && servlet != null) {
                 try {
                     servlet.initializeSessionAndInstallModel(request, response, 
                             this, session);
-                }
-                catch(RuntimeException e) {
+                } catch (RuntimeException e) {
                     throw e;
-                }
-                catch(Exception e) {
+                } catch (Exception e) {
                     throw new TemplateModelException(e);
                 }
             }
         }
     }
 
-    boolean isOrphaned(HttpSession currentSession)
-    {
+    boolean isOrphaned(HttpSession currentSession) {
         return (session != null && session != currentSession) || 
             (session == null && request == null);
     }
     
     public boolean isEmpty()
-    throws
-        TemplateModelException
-    {
+    throws TemplateModelException {
         checkSessionExistence();
         return session == null || !session.getAttributeNames().hasMoreElements();
     }

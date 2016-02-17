@@ -24,65 +24,51 @@ import freemarker.log.Logger;
 
 /**
  */
-public class SecurityUtilities
-{
-    private static final Logger logger = Logger.getLogger("freemarker.security");
-    private SecurityUtilities()
-    {
+public class SecurityUtilities {
+    private static final Logger LOG = Logger.getLogger("freemarker.security");
+    private SecurityUtilities() {
     }
     
-    public static String getSystemProperty(final String key)
-    {
+    public static String getSystemProperty(final String key) {
         return (String) AccessController.doPrivileged(
             new PrivilegedAction()
             {
-                public Object run()
-                {
+                public Object run() {
                     return System.getProperty(key);
                 }
             });
     }
 
-    public static String getSystemProperty(final String key, final String defValue)
-    {
-        try
-        {
+    public static String getSystemProperty(final String key, final String defValue) {
+        try {
             return (String) AccessController.doPrivileged(
                 new PrivilegedAction()
                 {
-                    public Object run()
-                    {
+                    public Object run() {
                         return System.getProperty(key, defValue);
                     }
                 });
-        }
-        catch(AccessControlException e)
-        {
-            logger.warn("Insufficient permissions to read system property " + 
+        } catch (AccessControlException e) {
+            LOG.warn("Insufficient permissions to read system property " + 
                     StringUtil.jQuoteNoXSS(key) + ", using default value " +
                     StringUtil.jQuoteNoXSS(defValue));
             return defValue;
         }
     }
 
-    public static Integer getSystemProperty(final String key, final int defValue)
-    {
-        try
-        {
+    public static Integer getSystemProperty(final String key, final int defValue) {
+        try {
             return (Integer) AccessController.doPrivileged(
                 new PrivilegedAction()
                 {
-                    public Object run()
-                    {
+                    public Object run() {
                         return Integer.getInteger(key, defValue);
                     }
                 });
-        }
-        catch(AccessControlException e)
-        {
-            logger.warn("Insufficient permissions to read system property " + 
+        } catch (AccessControlException e) {
+            LOG.warn("Insufficient permissions to read system property " + 
                     StringUtil.jQuote(key) + ", using default value " + defValue);
-            return new Integer(defValue);
+            return Integer.valueOf(defValue);
         }
     }
 }

@@ -73,34 +73,34 @@ public class _TemplateModelException extends TemplateModelException {
     // -----------------------------------------------------------------------------------------------------------------
     // Permutation group:
     
-    public _TemplateModelException(Object[] descriptionParts) {
+    public _TemplateModelException(Object... descriptionParts) {
         this((Environment) null, descriptionParts);
     }
 
-    public _TemplateModelException(Environment env, Object[] descriptionParts) {
+    public _TemplateModelException(Environment env, Object... descriptionParts) {
         this((Throwable) null, env, descriptionParts);
     }
 
-    public _TemplateModelException(Throwable cause, Object[] descriptionParts) {
+    public _TemplateModelException(Throwable cause, Object... descriptionParts) {
         this(cause, null, descriptionParts);
     }
 
-    public _TemplateModelException(Throwable cause, Environment env, Object[] descriptionParts) {
+    public _TemplateModelException(Throwable cause, Environment env, Object... descriptionParts) {
         super(cause, env, new _ErrorDescriptionBuilder(descriptionParts), true);
     }
 
     // -----------------------------------------------------------------------------------------------------------------
     // Permutation group:
     
-    public _TemplateModelException(Expression blamed, Object[] descriptionParts) {
+    public _TemplateModelException(Expression blamed, Object... descriptionParts) {
         this(blamed, null, descriptionParts);
     }
 
-    public _TemplateModelException(Expression blamed, Environment env, Object[] descriptionParts) {
+    public _TemplateModelException(Expression blamed, Environment env, Object... descriptionParts) {
         this(blamed, null, env, descriptionParts);
     }
 
-    public _TemplateModelException(Expression blamed, Throwable cause, Environment env, Object[] descriptionParts) {
+    public _TemplateModelException(Expression blamed, Throwable cause, Environment env, Object... descriptionParts) {
         super(cause, env, new _ErrorDescriptionBuilder(descriptionParts).blame(blamed), true);
     }
 
@@ -122,9 +122,9 @@ public class _TemplateModelException extends TemplateModelException {
     static Object[] modelHasStoredNullDescription(Class expected, TemplateModel model) {
         return new Object[] {
                 "The FreeMarker value exists, but has nothing inside it; the TemplateModel object (class: ",
-                model.getClass().getName(), ") has returned a null instead of a ",
-                ClassUtil.getShortClassName(expected), ". ",
-                "This is possibly a bug in the non-FreeMarker code that builds the data-model." };
+                model.getClass().getName(), ") has returned a null",
+                (expected != null ? new Object[] { " instead of a ", ClassUtil.getShortClassName(expected) } : ""),
+                ". This is possibly a bug in the non-FreeMarker code that builds the data-model." };
     }
     
 }

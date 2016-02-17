@@ -17,7 +17,6 @@
 package freemarker.core;
 
 import java.io.IOException;
-import java.util.ArrayList;
 
 import freemarker.template.TemplateException;
 
@@ -26,75 +25,96 @@ import freemarker.template.TemplateException;
  */
 final class MixedContent extends TemplateElement {
 
-    MixedContent()
-    {
-        nestedElements = new ArrayList();
-    }
+    MixedContent() { }
 
     void addElement(TemplateElement element) {
-        nestedElements.add(element);
+        addRegulatedChild(element);
     }
 
+    void addElement(int index, TemplateElement element) {
+        addRegulatedChild(index, element);
+    }
+    
+    @Override
     TemplateElement postParseCleanup(boolean stripWhitespace)
-        throws ParseException 
-    {
+        throws ParseException {
         super.postParseCleanup(stripWhitespace);
-        if (nestedElements.size() == 1) {
-            return (TemplateElement) nestedElements.get(0);
-        }
-        return this;
+        return getRegulatedChildCount() == 1 ? getRegulatedChild(0) : this;
     }
 
     /**
      * Processes the contents of the internal <tt>TemplateElement</tt> list,
      * and outputs the resulting text.
      */
+    @Override
     void accept(Environment env) 
-        throws TemplateException, IOException 
-    {
-        for (int i=0; i<nestedElements.size(); i++) {
-            TemplateElement element = (TemplateElement) nestedElements.get(i);
-            env.visit(element);
+        throws TemplateException, IOException {
+        int ln = getRegulatedChildCount();
+        for (int i = 0; i < ln; i++) {
+            env.visit(getRegulatedChild(i));
         }
     }
 
+    @Override
     protected String dump(boolean canonical) {
         if (canonical) {
-            StringBuffer buf = new StringBuffer();
-            for (int i = 0; i<nestedElements.size(); i++) {
-                TemplateElement element = (TemplateElement) nestedElements.get(i);
-                buf.append(element.getCanonicalForm());
+            StringBuilder buf = new StringBuilder();
+            int ln = getRegulatedChildCount();
+            for (int i = 0; i < ln; i++) {
+                buf.append(getRegulatedChild(i).getCanonicalForm());
             }
             return buf.toString();
         } else {
-            if (parent == null) {
+            if (getParentElement() == null) {
                 return "root";
             }
             return getNodeTypeSymbol(); // MixedContent is uninteresting in a stack trace.
         }
     }
 
+    @Override
+    protected boolean isOutputCacheable() {
+        int ln = getRegulatedChildCount();
+        for (int i = 0; i < ln; i++) {
+            if (!getRegulatedChild(i).isOutputCacheable()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    @Override
     String getNodeTypeSymbol() {
         return "#mixed_content";
     }
     
+    @Override
     int getParameterCount() {
         return 0;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         throw new IndexOutOfBoundsException();
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         throw new IndexOutOfBoundsException();
     }
     
+    @Override
     boolean isShownInStackTrace() {
         return false;
     }
     
+    @Override
     boolean isIgnorable() {
-        return nestedElements == null || nestedElements.size() == 0;
+        return getRegulatedChildCount() == 0;
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
     }
 }

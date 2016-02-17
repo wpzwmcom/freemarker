@@ -36,7 +36,7 @@ import freemarker.template.TemplateModelException;
  * submissions to be used as the command string in the
  * exec tag.</p>
  *
- * <p>Usage:<br />
+ * <p>Usage:<br>
  * From java:</p>
  * <pre>
  * SimpleHash root = new SimpleHash();
@@ -68,30 +68,32 @@ public class Execute implements freemarker.template.TemplateMethodModel {
      */
     public Object exec (List arguments) throws TemplateModelException {
         String aExecute;
-        StringBuffer    aOutputBuffer = new StringBuffer();
+        StringBuilder    aOutputBuffer = new StringBuilder();
 
-        if( arguments.size() < 1 ) {
+        if ( arguments.size() < 1 ) {
             throw new TemplateModelException( "Need an argument to execute" );
         }
 
-        aExecute = (String)(arguments.get(0));
+        aExecute = (String) (arguments.get(0));
 
         try {
             Process exec = Runtime.getRuntime().exec( aExecute );
 
             // stdout from the process comes in here
             InputStream execOut = exec.getInputStream();
-            Reader execReader = new InputStreamReader( execOut );
-
-            char[] buffer = new char[ OUTPUT_BUFFER_SIZE ];
-            int bytes_read = execReader.read( buffer );
-
-            while( bytes_read > 0 ) {
-                aOutputBuffer.append( buffer, 0, bytes_read );
-                bytes_read = execReader.read( buffer );
+            try {
+                Reader execReader = new InputStreamReader( execOut );
+    
+                char[] buffer = new char[ OUTPUT_BUFFER_SIZE ];
+                int bytes_read = execReader.read( buffer );
+                while ( bytes_read > 0 ) {
+                    aOutputBuffer.append( buffer, 0, bytes_read );
+                    bytes_read = execReader.read( buffer );
+                }
+            } finally {
+                execOut.close();
             }
-        }
-        catch( IOException ioe ) {
+        } catch ( IOException ioe ) {
             throw new TemplateModelException( ioe.getMessage() );
         }
         return aOutputBuffer.toString();

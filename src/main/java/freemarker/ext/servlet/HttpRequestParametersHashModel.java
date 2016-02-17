@@ -35,24 +35,20 @@ import freemarker.template.TemplateModel;
 
 public class HttpRequestParametersHashModel
     implements
-    TemplateHashModelEx
-{
+    TemplateHashModelEx {
     private final HttpServletRequest request;
     private List keys;
         
-    public HttpRequestParametersHashModel(HttpServletRequest request)
-    {
+    public HttpRequestParametersHashModel(HttpServletRequest request) {
         this.request = request;
     }
 
-    public TemplateModel get(String key)
-    {
+    public TemplateModel get(String key) {
         String value = request.getParameter(key);
         return value == null ? null : new SimpleScalar(value);
     }
 
-    public boolean isEmpty()
-    {
+    public boolean isEmpty() {
         return !request.getParameterNames().hasMoreElements();
     }
     
@@ -72,7 +68,7 @@ public class HttpRequestParametersHashModel
                     return iter.hasNext();
                 }
                 public Object next() {
-                    return request.getParameter((String)iter.next()); 
+                    return request.getParameter((String) iter.next()); 
                 }
                 public void remove() {
                     throw new UnsupportedOperationException();
@@ -80,15 +76,14 @@ public class HttpRequestParametersHashModel
             });
     }
 
-    protected String transcode(String string)
-    {
+    protected String transcode(String string) {
         return string;
     }
 
     private synchronized List getKeys() {
-        if(keys == null) {
+        if (keys == null) {
             keys = new ArrayList();
-            for (Enumeration enumeration = request.getParameterNames(); enumeration.hasMoreElements();) {
+            for (Enumeration enumeration = request.getParameterNames(); enumeration.hasMoreElements(); ) {
                 keys.add(enumeration.nextElement());
             }
         }

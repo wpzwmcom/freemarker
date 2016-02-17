@@ -28,19 +28,18 @@ import freemarker.template.Template;
  * 
  * @see ParseException
  */
-public class TokenMgrError extends Error
-{
+public class TokenMgrError extends Error {
    /*
     * Ordinals for various reasons why an Error of this type can be thrown.
     */
 
    /**
-    * Lexical error occured.
+    * Lexical error occurred.
     */
    static final int LEXICAL_ERROR = 0;
 
    /**
-    * An attempt wass made to create a second instance of a static token manager.
+    * An attempt was made to create a second instance of a static token manager.
     */
    static final int STATIC_LEXER_ERROR = 1;
 
@@ -69,7 +68,7 @@ public class TokenMgrError extends Error
     * equivalents in the given string
     */
    protected static final String addEscapes(String str) {
-      StringBuffer retval = new StringBuffer();
+      StringBuilder retval = new StringBuilder();
       char ch;
       for (int i = 0; i < str.length(); i++) {
         switch (str.charAt(i))
@@ -118,16 +117,16 @@ public class TokenMgrError extends Error
     * token manager to indicate a lexical error.
     * Parameters : 
     *    EOFSeen     : indicates if EOF caused the lexicl error
-    *    curLexState : lexical state in which this error occured
-    *    errorLine   : line number when the error occured
-    *    errorColumn : column number when the error occured
-    *    errorAfter  : prefix that was seen before this error occured
+    *    curLexState : lexical state in which this error occurred
+    *    errorLine   : line number when the error occurred
+    *    errorColumn : column number when the error occurred
+    *    errorAfter  : prefix that was seen before this error occurred
     *    curchar     : the offending character
     * Note: You can customize the lexical error message by modifying this method.
     */
    protected static String LexicalError(boolean EOFSeen, int lexState, int errorLine, int errorColumn, String errorAfter, char curChar) {
       return("Lexical error: encountered " +
-           (EOFSeen ? "<EOF> " : ("\"" + addEscapes(String.valueOf(curChar)) + "\"") + " (" + (int)curChar + "), ") +
+           (EOFSeen ? "<EOF> " : ("\"" + addEscapes(String.valueOf(curChar)) + "\"") + " (" + (int) curChar + "), ") +
            "after \"" + addEscapes(errorAfter) + "\".");
    }
 
@@ -140,7 +139,8 @@ public class TokenMgrError extends Error
     *
     * from this method for such cases in the release version of your parser.
     */
-   public String getMessage() {
+   @Override
+public String getMessage() {
       return super.getMessage();
    }
 
@@ -159,6 +159,18 @@ public class TokenMgrError extends Error
 
    /**
     * @since 2.3.20
+    * 
+    * @deprecated If you know the end position, use {@link #TokenMgrError(String, int, int, int, int, int)} instead.
+    */
+   @Deprecated
+public TokenMgrError(String detail, int reason, int errorLine, int errorColumn) {
+       this(detail, reason, errorLine, errorColumn, 0, 0);
+       this.endLineNumber = null; 
+       this.endColumnNumber = null; 
+    }
+   
+   /**
+    * @since 2.3.21
     */
    public TokenMgrError(String detail, int reason,
            int errorLine, int errorColumn,
@@ -167,17 +179,26 @@ public class TokenMgrError extends Error
        this.detail = detail;
        errorCode = reason;
        
-       this.lineNumber = new Integer(errorLine);  // In J2SE there was no Integer.valueOf(int)
-       this.columnNumber = new Integer(errorColumn);
-       this.endLineNumber = new Integer(endLineNumber); 
-       this.endColumnNumber = new Integer(endColumnNumber); 
+       this.lineNumber = Integer.valueOf(errorLine);  // In J2SE there was no Integer.valueOf(int)
+       this.columnNumber = Integer.valueOf(errorColumn);
+       this.endLineNumber = Integer.valueOf(endLineNumber); 
+       this.endColumnNumber = Integer.valueOf(endColumnNumber); 
     }
 
+   /**
+    * Overload for JavaCC 6 compatibility.
+    * 
+    * @since 2.3.24
+    */
+   TokenMgrError(boolean EOFSeen, int lexState, int errorLine, int errorColumn, String errorAfter, int curChar, int reason) {
+       this(EOFSeen, lexState, errorLine, errorColumn, errorAfter, (char) curChar, reason);
+   }
+   
    public TokenMgrError(boolean EOFSeen, int lexState, int errorLine, int errorColumn, String errorAfter, char curChar, int reason) {
       this(LexicalError(EOFSeen, lexState, errorLine, errorColumn, errorAfter, curChar), reason);
       
-      this.lineNumber = new Integer(errorLine);  // In J2SE there was no Integer.valueOf(int)
-      this.columnNumber = new Integer(errorColumn);
+      this.lineNumber = Integer.valueOf(errorLine);  // In J2SE there was no Integer.valueOf(int)
+      this.columnNumber = Integer.valueOf(errorColumn);
       // We blame the single character that can't be the start of a legal token: 
       this.endLineNumber = this.lineNumber; 
       this.endColumnNumber = this.columnNumber; 

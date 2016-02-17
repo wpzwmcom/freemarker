@@ -19,8 +19,8 @@ package freemarker.ext.beans;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
-import freemarker.core._ConcurrentMapFactory;
 import freemarker.template.TemplateHashModel;
 import freemarker.template.TemplateModel;
 import freemarker.template.TemplateModelException;
@@ -32,10 +32,7 @@ import freemarker.template.utility.ClassUtil;
 abstract class ClassBasedModelFactory implements TemplateHashModel {
     private final BeansWrapper wrapper;
     
-    private final Map/*<String,TemplateModel>*/ cache
-            = _ConcurrentMapFactory.newMaybeConcurrentHashMap();
-    private final boolean isCacheConcurrentMap
-            = _ConcurrentMapFactory.isConcurrent(cache);
+    private final Map/*<String,TemplateModel>*/ cache = new ConcurrentHashMap();
     private final Set classIntrospectionsInProgress = new HashSet();
     
     protected ClassBasedModelFactory(BeansWrapper wrapper) {
@@ -45,7 +42,7 @@ abstract class ClassBasedModelFactory implements TemplateHashModel {
     public TemplateModel get(String key) throws TemplateModelException {
         try {
             return getInternal(key);
-        } catch(Exception e) {
+        } catch (Exception e) {
             if (e instanceof TemplateModelException) {
                 throw (TemplateModelException) e;
             } else {
@@ -55,14 +52,14 @@ abstract class ClassBasedModelFactory implements TemplateHashModel {
     }
 
     private TemplateModel getInternal(String key) throws TemplateModelException, ClassNotFoundException {
-        if (isCacheConcurrentMap) {
+        {
             TemplateModel model = (TemplateModel) cache.get(key);
             if (model != null) return model;
         }
 
         final ClassIntrospector classIntrospector;
         int classIntrospectorClearingCounter;
-        final Object sharedLock = wrapper.getSharedInrospectionLock();
+        final Object sharedLock = wrapper.getSharedIntrospectionLock();
         synchronized (sharedLock) {
             TemplateModel model = (TemplateModel) cache.get(key);
             if (model != null) return model;
@@ -121,13 +118,13 @@ abstract class ClassBasedModelFactory implements TemplateHashModel {
     }
     
     void clearCache() {
-        synchronized(wrapper.getSharedInrospectionLock()) {
+        synchronized (wrapper.getSharedIntrospectionLock()) {
             cache.clear();
         }
     }
     
     void removeFromCache(Class clazz) {
-        synchronized(wrapper.getSharedInrospectionLock()) {
+        synchronized (wrapper.getSharedIntrospectionLock()) {
             cache.remove(clazz.getName());
         }
     }

@@ -58,6 +58,7 @@ final class ClassIntrospectorBuilder implements Cloneable {
         bugfixed = BeansWrapper.is2321Bugfixed(incompatibleImprovements);
     }
     
+    @Override
     protected Object clone() {
         try {
             return super.clone();
@@ -66,6 +67,7 @@ final class ClassIntrospectorBuilder implements Cloneable {
         }
     }
 
+    @Override
     public int hashCode() {
         final int prime = 31;
         int result = 1;
@@ -77,6 +79,7 @@ final class ClassIntrospectorBuilder implements Cloneable {
         return result;
     }
 
+    @Override
     public boolean equals(Object obj) {
         if (this == obj) return true;
         if (obj == null) return false;
@@ -160,7 +163,7 @@ final class ClassIntrospectorBuilder implements Cloneable {
      * Returns an instance that is possibly shared (singleton). Note that this comes with its own "shared lock",
      * since everyone who uses this object will have to lock with that common object.
      */
-    ClassIntrospector getResult() {
+    ClassIntrospector build() {
         if ((methodAppearanceFineTuner == null || methodAppearanceFineTuner instanceof SingletonCustomizer)
                 && (methodSorter == null || methodSorter instanceof SingletonCustomizer)) {
             // Instance can be cached.

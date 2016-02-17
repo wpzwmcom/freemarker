@@ -25,8 +25,7 @@ import freemarker.template.TemplateModelException;
 
 class JspContextModel
 implements
-    TemplateHashModel
-{
+    TemplateHashModel {
     public static final int ANY_SCOPE = -1;
     public static final int PAGE_SCOPE = PageContext.PAGE_SCOPE;
     public static final int REQUEST_SCOPE = PageContext.REQUEST_SCOPE;
@@ -36,20 +35,17 @@ implements
     private final PageContext pageContext;
     private final int scope;
 
-    public JspContextModel(PageContext pageContext, int scope)
-    {
+    public JspContextModel(PageContext pageContext, int scope) {
         this.pageContext = pageContext;
         this.scope = scope;
     }
 
-    public TemplateModel get(String key) throws TemplateModelException
-    {
+    public TemplateModel get(String key) throws TemplateModelException {
         Object bean = scope == ANY_SCOPE ? pageContext.findAttribute(key) : pageContext.getAttribute(key, scope);
         return BeansWrapper.getDefaultInstance().wrap(bean);
     }
 
-    public boolean isEmpty()
-    {
+    public boolean isEmpty() {
         return false;
     }
 }

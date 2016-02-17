@@ -19,169 +19,306 @@ package freemarker.core;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 
 import freemarker.template.SimpleNumber;
 import freemarker.template.TemplateBooleanModel;
 import freemarker.template.TemplateCollectionModel;
 import freemarker.template.TemplateException;
 import freemarker.template.TemplateModel;
+import freemarker.template.TemplateModelException;
 import freemarker.template.TemplateModelIterator;
 import freemarker.template.TemplateSequenceModel;
+import freemarker.template.utility.Constants;
 
 /**
  * A #list or #foreach element.
  */
 final class IteratorBlock extends TemplateElement {
 
-    private Expression listSource;
-    private String loopVariableName;
-    private boolean isForEach;
+    private final Expression listExp;
+    private final String loopVarName;
+    private final boolean isForEach;
 
     /**
-     * @param listExpression a variable referring to a sequence or collection
-     * @param indexName an arbitrary index variable name
-     * @param nestedBlock the nestedBlock to iterate over
+     * @param listExp
+     *            a variable referring to a sequence or collection ("the list" from now on)
+     * @param loopVarName
+     *            The name of the variable that will hold the value of the current item when looping through the list.
+     * @param nestedBlock
+     *            The nested content to execute if the list wasn't empty; can't be {@code null}. If the loop variable
+     *            was specified in the start tag, this is also what we will iterator over.
      */
-    IteratorBlock(Expression listExpression,
-                  String indexName,
+    IteratorBlock(Expression listExp,
+                  String loopVarName,
                   TemplateElement nestedBlock,
-                  boolean isForEach) 
-    {
-        this.listSource = listExpression;
-        this.loopVariableName = indexName;
+                  boolean isForEach) {
+        this.listExp = listExp;
+        this.loopVarName = loopVarName;
+        setNestedBlock(nestedBlock);
         this.isForEach = isForEach;
-        this.nestedBlock = nestedBlock;
     }
 
-    void accept(Environment env) throws TemplateException, IOException 
-    {
-        TemplateModel baseModel = listSource.eval(env);
-        if (baseModel == null) {
+    @Override
+    void accept(Environment env) throws TemplateException, IOException {
+        acceptWithResult(env);
+    }
+    
+    boolean acceptWithResult(Environment env) throws TemplateException, IOException {
+        TemplateModel listValue = listExp.eval(env);
+        if (listValue == null) {
             if (env.isClassicCompatible()) {
-                // Classic behavior of simply ignoring null references.
-                return;
+                listValue = Constants.EMPTY_SEQUENCE; 
+            } else {
+                listExp.assertNonNull(null, env);
             }
-            listSource.assertNonNull(baseModel, env);
         }
 
-        env.visitIteratorBlock(new Context(baseModel));
+        return env.visitIteratorBlock(new IterationContext(listValue, loopVarName));
     }
 
+    /**
+     * @param loopVariableName
+     *            Then name of the loop variable whose context we are looking for, or {@code null} if we simply look for
+     *            the innermost context.
+     * @return The matching context or {@code null} if no such context exists.
+     */
+    static IterationContext findEnclosingIterationContext(Environment env, String loopVariableName)
+            throws _MiscTemplateException {
+        ArrayList ctxStack = env.getLocalContextStack();
+        if (ctxStack != null) {
+            for (int i = ctxStack.size() - 1; i >= 0; i--) {
+                Object ctx = ctxStack.get(i);
+                if (ctx instanceof IterationContext
+                        && (loopVariableName == null
+                            || loopVariableName.equals(((IterationContext) ctx).getLoopVariableName()))) {
+                    return (IterationContext) ctx;
+                }
+            }
+        }
+        return null;
+    }
+    
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         if (canonical) buf.append('<');
         buf.append(getNodeTypeSymbol());
         buf.append(' ');
         if (isForEach) {
-            buf.append(loopVariableName);
+            buf.append(_CoreStringUtils.toFTLTopLevelIdentifierReference(loopVarName));
             buf.append(" in ");
-            buf.append(listSource.getCanonicalForm());
-        }
-        else {
-            buf.append(listSource.getCanonicalForm());
-            buf.append(" as ");
-            buf.append(loopVariableName);
+            buf.append(listExp.getCanonicalForm());
+        } else {
+            buf.append(listExp.getCanonicalForm());
+            if (loopVarName != null) {
+                buf.append(" as ");
+                buf.append(_CoreStringUtils.toFTLTopLevelIdentifierReference(loopVarName));
+            }
         }
         if (canonical) {
             buf.append(">");
-            if (nestedBlock != null) {
-                buf.append(nestedBlock.getCanonicalForm());
+            if (getNestedBlock() != null) {
+                buf.append(getNestedBlock().getCanonicalForm());
             }
-            buf.append("</");
-            buf.append(getNodeTypeSymbol());
-            buf.append('>');
+            if (!(getParentElement() instanceof ListElseContainer)) {
+                buf.append("</");
+                buf.append(getNodeTypeSymbol());
+                buf.append('>');
+            }
         }
         return buf.toString();
     }
     
+    @Override
     int getParameterCount() {
-        return 2;
+        return loopVarName != null ? 2 : 1;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         switch (idx) {
-        case 0: return listSource;
-        case 1: return loopVariableName;
+        case 0:
+            return listExp;
+        case 1:
+            if (loopVarName == null) throw new IndexOutOfBoundsException();
+            return loopVarName;
         default: throw new IndexOutOfBoundsException();
         }
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         switch (idx) {
-        case 0: return ParameterRole.LIST_SOURCE;
-        case 1: return ParameterRole.TARGET_LOOP_VARIABLE;
+        case 0:
+            return ParameterRole.LIST_SOURCE;
+        case 1:
+            if (loopVarName == null) throw new IndexOutOfBoundsException();
+            return ParameterRole.TARGET_LOOP_VARIABLE;
         default: throw new IndexOutOfBoundsException();
         }
     }    
     
+    @Override
     String getNodeTypeSymbol() {
         return isForEach ? "#foreach" : "#list";
     }
 
+    @Override
+    boolean isNestedBlockRepeater() {
+        return loopVarName != null;
+    }
+
     /**
-     * A helper class that holds the context of the loop.
+     * Holds the context of a #list (or #forEach) directive.
      */
-    class Context implements LocalContext {
+    class IterationContext implements LocalContext {
+        
+        private static final String LOOP_STATE_HAS_NEXT = "_has_next"; // lenght: 9
+        private static final String LOOP_STATE_INDEX = "_index"; // length 6
+        
+        private TemplateModelIterator openedIteratorModel;
         private boolean hasNext;
         private TemplateModel loopVar;
         private int index;
-        private Collection variableNames = null;
-        private TemplateModel list;
+        private boolean alreadyEntered;
+        private Collection localVarNames = null;
         
-        Context(TemplateModel list) {
-            this.list = list;
+        /** If the {@code #list} has nested {@code #items}, it's {@code null} outside the {@code #items}. */
+        private String loopVarName;
+        
+        private final TemplateModel listValue;
+        
+        public IterationContext(TemplateModel listValue, String loopVariableName) {
+            this.listValue = listValue;
+            this.loopVarName = loopVariableName;
         }
         
-        
-        void runLoop(Environment env) throws TemplateException, IOException {
-            if (list instanceof TemplateCollectionModel) {
-                TemplateCollectionModel baseListModel = (TemplateCollectionModel)list;
-                TemplateModelIterator it = baseListModel.iterator();
-                hasNext = it.hasNext();
-                while (hasNext) {
-                    loopVar = it.next();
-                    hasNext = it.hasNext();
-                    if (nestedBlock != null) {
-                        env.visit(nestedBlock);
-                    }
-                    index++;
+        boolean accept(Environment env) throws TemplateException, IOException {
+            return executeNestedBlock(env, getNestedBlock());
+        }
+
+        void loopForItemsElement(Environment env, TemplateElement nestedBlock, String loopVarName)
+                    throws NonSequenceOrCollectionException, TemplateModelException, InvalidReferenceException,
+                    TemplateException, IOException {
+            try {
+                if (alreadyEntered) {
+                    throw new _MiscTemplateException(env,
+                            "The #items directive was already entered earlier for this listing.");
                 }
-            }
-            else if (list instanceof TemplateSequenceModel) {
-                TemplateSequenceModel tsm = (TemplateSequenceModel) list;
-                int size = tsm.size();
-                for (index =0; index <size; index++) {
-                    loopVar = tsm.get(index);
-                    hasNext = (size > index +1);
-                    if (nestedBlock != null) {
-                        env.visitByHiddingParent(nestedBlock);
-                    }
-                }
-            }
-            else if (env.isClassicCompatible()) {
-                loopVar = list;
-                if (nestedBlock != null) {
-                    env.visitByHiddingParent(nestedBlock);
-                }
-            }
-            else {
-                throw new NonSequenceOrCollectionException(
-                        listSource, list, env);
+                alreadyEntered = true;
+                this.loopVarName = loopVarName;
+                executeNestedBlock(env, nestedBlock);
+            } finally {
+                this.loopVarName = null;
             }
         }
 
+        /**
+         * Executes the given block for the {@link #listValue}: if {@link #loopVarName} is non-{@code null}, then for
+         * each list item once, otherwise once if {@link #listValue} isn't empty.
+         */
+        private boolean executeNestedBlock(Environment env, TemplateElement nestedBlock)
+                throws TemplateModelException, TemplateException, IOException,
+                NonSequenceOrCollectionException, InvalidReferenceException {
+            return executeNestedBlockInner(env, nestedBlock);
+        }
+
+        private boolean executeNestedBlockInner(Environment env, TemplateElement nestedBlock)
+                throws TemplateModelException, TemplateException, IOException, NonSequenceOrCollectionException,
+                InvalidReferenceException {
+            final boolean listNotEmpty;
+            if (listValue instanceof TemplateCollectionModel) {
+                final TemplateCollectionModel collModel = (TemplateCollectionModel) listValue;
+                final TemplateModelIterator iterModel
+                        = openedIteratorModel == null ? collModel.iterator() : openedIteratorModel;
+                hasNext = iterModel.hasNext();
+                listNotEmpty = hasNext;
+                if (listNotEmpty) {
+                    if (loopVarName != null) {
+                        try {
+                            while (hasNext) {
+                                loopVar = iterModel.next();
+                                hasNext = iterModel.hasNext();
+                                if (nestedBlock != null) {
+                                    env.visitByHiddingParent(nestedBlock);
+                                }
+                                index++;
+                            }
+                        } catch (BreakInstruction.Break br) {
+                            // Silently exit loop
+                        }
+                        openedIteratorModel = null;
+                    } else {
+                        // We must reuse this later, because TemplateCollectionModel-s that wrap an Iterator only
+                        // allow one iterator() call.
+                        openedIteratorModel = iterModel;
+                        if (nestedBlock != null) {
+                            env.visitByHiddingParent(nestedBlock);
+                        }
+                    }
+                }
+            } else if (listValue instanceof TemplateSequenceModel) {
+                final TemplateSequenceModel seqModel = (TemplateSequenceModel) listValue;
+                final int size = seqModel.size();
+                listNotEmpty = size != 0;
+                if (listNotEmpty) {
+                    if (loopVarName != null) {
+                        try {
+                            for (index = 0; index < size; index++) {
+                                loopVar = seqModel.get(index);
+                                hasNext = (size > index + 1);
+                                if (nestedBlock != null) {
+                                    env.visitByHiddingParent(nestedBlock);
+                                }
+                            }
+                        } catch (BreakInstruction.Break br) {
+                            // Silently exit loop
+                        }
+                    } else {
+                        if (nestedBlock != null) {
+                            env.visitByHiddingParent(nestedBlock);
+                        }
+                    }
+                }
+            } else if (env.isClassicCompatible()) {
+                listNotEmpty = true;
+                if (loopVarName != null) {
+                    loopVar = listValue;
+                    hasNext = false;
+                }
+                try {
+                    if (nestedBlock != null) {
+                        env.visitByHiddingParent(nestedBlock);
+                    }
+                } catch (BreakInstruction.Break br) {
+                    // Silently exit "loop"
+                }
+            } else {
+                throw new NonSequenceOrCollectionException(
+                        listExp, listValue, env);
+            }
+            
+            return listNotEmpty;
+        }
+
+        String getLoopVariableName() {
+            return this.loopVarName;
+        }
+
         public TemplateModel getLocalVariable(String name) {
-            if (name.startsWith(loopVariableName)) {
+            String loopVariableName = this.loopVarName;
+            if (loopVariableName != null && name.startsWith(loopVariableName)) {
                 switch(name.length() - loopVariableName.length()) {
                     case 0: 
                         return loopVar;
                     case 6: 
-                        if(name.endsWith("_index")) {
+                        if (name.endsWith(LOOP_STATE_INDEX)) {
                             return new SimpleNumber(index);
                         }
                         break;
                     case 9: 
-                        if(name.endsWith("_has_next")) {
+                        if (name.endsWith(LOOP_STATE_HAS_NEXT)) {
                             return hasNext ? TemplateBooleanModel.TRUE : TemplateBooleanModel.FALSE;
                         }
                         break;
@@ -191,13 +328,28 @@ final class IteratorBlock extends TemplateElement {
         }
         
         public Collection getLocalVariableNames() {
-            if(variableNames == null) {
-                variableNames = new ArrayList(3);
-                variableNames.add(loopVariableName);
-                variableNames.add(loopVariableName + "_index");
-                variableNames.add(loopVariableName + "_has_next");
+            String loopVariableName = this.loopVarName;
+            if (loopVariableName != null) {
+                if (localVarNames == null) {
+                    localVarNames = new ArrayList(3);
+                    localVarNames.add(loopVariableName);
+                    localVarNames.add(loopVariableName + LOOP_STATE_INDEX);
+                    localVarNames.add(loopVariableName + LOOP_STATE_HAS_NEXT);
+                }
+                return localVarNames;
+            } else {
+                return Collections.EMPTY_LIST;
             }
-            return variableNames;
         }
+
+        boolean hasNext() {
+            return hasNext;
+        }
+        
+        int getIndex() {
+            return index;
+        }
+        
     }
+    
 }

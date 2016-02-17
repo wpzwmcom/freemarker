@@ -16,13 +16,15 @@
 
 package freemarker.template.utility;
 
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.io.Writer;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.StringTokenizer;
+import java.util.regex.Pattern;
 
-import freemarker.core.BugException;
 import freemarker.core.Environment;
 import freemarker.core.ParseException;
 import freemarker.template.Template;
@@ -32,7 +34,15 @@ import freemarker.template.Version;
  *  Some text related utilities.
  */
 public class StringUtil {
+    
     private static final char[] ESCAPES = createEscapes();
+    
+    private static final char[] LT = new char[] { '&', 'l', 't', ';' };
+    private static final char[] GT = new char[] { '&', 'g', 't', ';' };
+    private static final char[] AMP = new char[] { '&', 'a', 'm', 'p', ';' };
+    private static final char[] QUOT = new char[] { '&', 'q', 'u', 'o', 't', ';' };
+    private static final char[] HTML_APOS = new char[] { '&', '#', '3', '9', ';' };
+    private static final char[] XML_APOS = new char[] { '&', 'a', 'p', 'o', 's', ';' };
 
     /*
      *  For better performance most methods are folded down. Don't you scream... :)
@@ -46,6 +56,7 @@ public class StringUtil {
      *    
      *  @deprecated Use {@link #XHTMLEnc(String)} instead, because it escapes apostrophe-quote too.
      */
+    @Deprecated
     public static String HTMLEnc(String s) {
         return XMLEncNA(s);
     }
@@ -55,9 +66,18 @@ public class StringUtil {
      *  Replaces all '&gt;' '&lt;' '&amp;', "'" and '"' with entity reference
      */
     public static String XMLEnc(String s) {
-        return XMLOrXHTMLEnc(s, "&apos;");
+        return XMLOrHTMLEnc(s, true, true, XML_APOS);
     }
 
+    /**
+     * Like {@link #XMLEnc(String)}, but writes the result into a {@link Writer}.
+     * 
+     * @since 2.3.24
+     */
+    public static void XMLEnc(String s, Writer out) throws IOException {
+        XMLOrHTMLEnc(s, XML_APOS, out);
+    }
+    
     /**
      *  XHTML Encoding.
      *  Replaces all '&gt;' '&lt;' '&amp;', "'" and '"' with entity reference
@@ -66,46 +86,152 @@ public class StringUtil {
      *  instead [see http://www.w3.org/TR/xhtml1/#C_16])
      */
     public static String XHTMLEnc(String s) {
-        return XMLOrXHTMLEnc(s, "&#39;");
+        return XMLOrHTMLEnc(s, true, true, HTML_APOS);
+    }
+
+    /**
+     * Like {@link #XHTMLEnc(String)}, but writes the result into a {@link Writer}.
+     * 
+     * @since 2.3.24
+     */
+    public static void XHTMLEnc(String s, Writer out) throws IOException {
+        XMLOrHTMLEnc(s, HTML_APOS, out);
     }
     
-    private static String XMLOrXHTMLEnc(String s, String aposReplacement) {
+    private static String XMLOrHTMLEnc(String s, boolean escGT, boolean escQuot, char[] apos) {
+        final int ln = s.length();
+        
+        // First we find out if we need to escape, and if so, what the length of the output will be:
+        int firstEscIdx = -1;
+        int lastEscIdx = 0;
+        int plusOutLn = 0;
+        for (int i = 0; i < ln; i++) {
+            escape: do {
+                final char c = s.charAt(i);
+                switch (c) {
+                case '<':
+                    plusOutLn += LT.length - 1;
+                    break;
+                case '>':
+                    if (!(escGT || maybeCDataEndGT(s, i))) {
+                        break escape;
+                    }
+                    plusOutLn += GT.length - 1;
+                    break;
+                case '&':
+                    plusOutLn += AMP.length - 1;
+                    break;
+                case '"':
+                    if (!escQuot) {
+                        break escape;
+                    }
+                    plusOutLn += QUOT.length - 1;
+                    break;
+                case '\'': // apos
+                    if (apos == null) {
+                        break escape;
+                    }
+                    plusOutLn += apos.length - 1;
+                    break;
+                default:
+                    break escape;
+                }
+                
+                if (firstEscIdx == -1) {
+                    firstEscIdx = i;
+                }
+                lastEscIdx = i;
+            } while (false);
+        }
+        
+        if (firstEscIdx == -1) {
+            return s; // Nothing to escape
+        } else {
+            final char[] esced = new char[ln + plusOutLn];
+            if (firstEscIdx != 0) {
+                s.getChars(0, firstEscIdx, esced, 0);
+            }
+            int dst = firstEscIdx;
+            scan: for (int i = firstEscIdx; i <= lastEscIdx; i++) {
+                final char c = s.charAt(i);
+                switch (c) {
+                case '<':
+                    dst = shortArrayCopy(LT, esced, dst);
+                    continue scan;
+                case '>':
+                    if (!(escGT || maybeCDataEndGT(s, i))) {
+                        break;
+                    }
+                    dst = shortArrayCopy(GT, esced, dst);
+                    continue scan;
+                case '&':
+                    dst = shortArrayCopy(AMP, esced, dst);
+                    continue scan;
+                case '"':
+                    if (!escQuot) {
+                        break;
+                    }
+                    dst = shortArrayCopy(QUOT, esced, dst);
+                    continue scan;
+                case '\'': // apos
+                    if (apos == null) {
+                        break;
+                    }
+                    dst = shortArrayCopy(apos, esced, dst);
+                    continue scan;
+                }
+                esced[dst++] = c;
+            }
+            if (lastEscIdx != ln - 1) {
+                s.getChars(lastEscIdx + 1, ln, esced, dst);
+            }
+            
+            return String.valueOf(esced);
+        }
+    }
+    
+    private static boolean maybeCDataEndGT(String s, int i) {
+        if (i == 0) return true;
+        if (s.charAt(i - 1) != ']') return false;
+        if (i == 1 || s.charAt(i - 2) == ']') return true;
+        return false;
+    }
+
+    private static void XMLOrHTMLEnc(String s, char[] apos, Writer out) throws IOException {
+        int writtenEnd = 0;  // exclusive end
         int ln = s.length();
         for (int i = 0; i < ln; i++) {
             char c = s.charAt(i);
             if (c == '<' || c == '>' || c == '&' || c == '"' || c == '\'') {
-                StringBuffer b =
-                        new StringBuffer(s.substring(0, i));
+                int flushLn = i - writtenEnd;
+                if (flushLn != 0) {
+                    out.write(s, writtenEnd, flushLn);
+                }
+                writtenEnd = i + 1;
+                
                 switch (c) {
-                    case '<': b.append("&lt;"); break;
-                    case '>': b.append("&gt;"); break;
-                    case '&': b.append("&amp;"); break;
-                    case '"': b.append("&quot;"); break;
-                    case '\'': b.append(aposReplacement); break;
+                case '<': out.write(LT); break;
+                case '>': out.write(GT); break;
+                case '&': out.write(AMP); break;
+                case '"': out.write(QUOT); break;
+                default: out.write(apos); break;
                 }
-                i++;
-                int next = i;
-                while (i < ln) {
-                    c = s.charAt(i);
-                    if (c == '<' || c == '>' || c == '&' || c == '"' || c == '\'') {
-                        b.append(s.substring(next, i));
-                        switch (c) {
-                            case '<': b.append("&lt;"); break;
-                            case '>': b.append("&gt;"); break;
-                            case '&': b.append("&amp;"); break;
-                            case '"': b.append("&quot;"); break;
-                            case '\'': b.append(aposReplacement); break;
-                        }
-                        next = i + 1;
-                    }
-                    i++;
-                }
-                if (next < ln) b.append(s.substring(next));
-                s = b.toString();
-                break;
-            } // if c ==
-        } // for
-        return s;
+            }
+        }
+        if (writtenEnd < ln) {
+            out.write(s, writtenEnd, ln - writtenEnd);
+        }
+    }
+    
+    /**
+     * For efficiently copying very short char arrays.
+     */
+    private static int shortArrayCopy(char[] src, char[] dst, int dstOffset) {
+        int ln = src.length;
+        for (int i = 0; i < ln; i++) {
+            dst[dstOffset++] = src[i];
+        }
+        return dstOffset;
     }
     
     /**
@@ -113,82 +239,16 @@ public class StringUtil {
      *  @see #XMLEnc(String)
      */
     public static String XMLEncNA(String s) {
-        int ln = s.length();
-        for (int i = 0; i < ln; i++) {
-            char c = s.charAt(i);
-            if (c == '<' || c == '>' || c == '&' || c == '"') {
-                StringBuffer b =
-                        new StringBuffer(s.substring(0, i));
-                switch (c) {
-                    case '<': b.append("&lt;"); break;
-                    case '>': b.append("&gt;"); break;
-                    case '&': b.append("&amp;"); break;
-                    case '"': b.append("&quot;"); break;
-                }
-                i++;
-                int next = i;
-                while (i < ln) {
-                    c = s.charAt(i);
-                    if (c == '<' || c == '>' || c == '&' || c == '"') {
-                        b.append(s.substring(next, i));
-                        switch (c) {
-                            case '<': b.append("&lt;"); break;
-                            case '>': b.append("&gt;"); break;
-                            case '&': b.append("&amp;"); break;
-                            case '"': b.append("&quot;"); break;
-                        }
-                        next = i + 1;
-                    }
-                    i++;
-                }
-                if (next < ln) b.append(s.substring(next));
-                s = b.toString();
-                break;
-            } // if c ==
-        } // for
-        return s;
+        return XMLOrHTMLEnc(s, true, true, null);
     }
 
     /**
-     *  XML encoding for attributes valies quoted with <tt>"</tt> (not with <tt>'</tt>!).
+     *  XML encoding for attribute values quoted with <tt>"</tt> (not with <tt>'</tt>!).
      *  Also can be used for HTML attributes that are quoted with <tt>"</tt>.
      *  @see #XMLEnc(String)
      */
     public static String XMLEncQAttr(String s) {
-        int ln = s.length();
-        for (int i = 0; i < ln; i++) {
-            char c = s.charAt(i);
-            if (c == '<' || c == '&' || c == '"') {
-                StringBuffer b =
-                        new StringBuffer(s.substring(0, i));
-                switch (c) {
-                    case '<': b.append("&lt;"); break;
-                    case '&': b.append("&amp;"); break;
-                    case '"': b.append("&quot;"); break;
-                }
-                i++;
-                int next = i;
-                while (i < ln) {
-                    c = s.charAt(i);
-                    if (c == '<' || c == '&' || c == '"') {
-                        b.append(s.substring(next, i));
-                        switch (c) {
-                            case '<': b.append("&lt;"); break;
-                            case '&': b.append("&amp;"); break;
-                            case '"': b.append("&quot;"); break;
-                        }
-                        next = i + 1;
-                    }
-                    i++;
-                }
-                if (next < ln) {
-                    b.append(s.substring(next));
-                }
-                s = b.toString();
-                break;
-            } // if c ==
-        } // for
-        return s;
+        return XMLOrHTMLEnc(s, false, true, null);
     }
 
     /**
@@ -197,90 +257,78 @@ public class StringUtil {
      *  @see #XMLEnc(String)
      */
     public static String XMLEncNQG(String s) {
-        int ln = s.length();
-        for (int i = 0; i < ln; i++) {
-            char c = s.charAt(i);
-            if (c == '<'
-                    || (c == '>' && i > 1
-                            && s.charAt(i - 1) == ']'
-                            && s.charAt(i - 2) == ']')
-                    || c == '&') {
-                StringBuffer b =
-                        new StringBuffer(s.substring(0, i));
-                switch (c) {
-                    case '<': b.append("&lt;"); break;
-                    case '>': b.append("&gt;"); break;
-                    case '&': b.append("&amp;"); break;
-                    default: throw new BugException();
-                }
-                i++;
-                int next = i;
-                while (i < ln) {
-                    c = s.charAt(i);
-                    if (c == '<'
-                            || (c == '>' && i > 1
-                                    && s.charAt(i - 1) == ']'
-                                    && s.charAt(i - 2) == ']')
-                            || c == '&') {
-                        b.append(s.substring(next, i));
-                        switch (c) {
-                            case '<': b.append("&lt;"); break;
-                            case '>': b.append("&gt;"); break;
-                            case '&': b.append("&amp;"); break;
-                            default: throw new BugException();
-                        }
-                        next = i + 1;
-                    }
-                    i++;
-                }
-                if (next < ln) {
-                    b.append(s.substring(next));
-                }
-                s = b.toString();
-                break;
-            } // if c ==
-        } // for
-        return s;
+        return XMLOrHTMLEnc(s, false, false, null);
     }
     
     /**
      *  Rich Text Format encoding (does not replace line breaks).
-     *  Escapes all '\' '{' '}' and '"'
+     *  Escapes all '\' '{' '}'.
      */
     public static String RTFEnc(String s) {
         int ln = s.length();
+        
+        // First we find out if we need to escape, and if so, what the length of the output will be:
+        int firstEscIdx = -1;
+        int lastEscIdx = 0;
+        int plusOutLn = 0;
         for (int i = 0; i < ln; i++) {
             char c = s.charAt(i);
-            if (c == '\\' || c == '{' || c == '}') {
-                StringBuffer b =
-                        new StringBuffer(s.substring(0, i));
-                switch (c) {
-                    case '\\': b.append("\\\\"); break;
-                    case '{': b.append("\\{"); break;
-                    case '}': b.append("\\}"); break;
+            if (c == '{' || c == '}' || c == '\\') {
+                if (firstEscIdx == -1) {
+                    firstEscIdx = i;
                 }
-                i++;
-                int next = i;
-                while (i < ln) {
-                    c = s.charAt(i);
-                    if (c == '\\' || c == '{' || c == '}') {
-                        b.append(s.substring(next, i));
-                        switch (c) {
-                            case '\\': b.append("\\\\"); break;
-                            case '{': b.append("\\{"); break;
-                            case '}': b.append("\\}"); break;
-                        }
-                        next = i + 1;
-                    }
-                    i++;
+                lastEscIdx = i;
+                plusOutLn++;
+            }
+        }
+        
+        if (firstEscIdx == -1) {
+            return s; // Nothing to escape
+        } else {
+            char[] esced = new char[ln + plusOutLn];
+            if (firstEscIdx != 0) {
+                s.getChars(0, firstEscIdx, esced, 0);
+            }
+            int dst = firstEscIdx;
+            for (int i = firstEscIdx; i <= lastEscIdx; i++) {
+                char c = s.charAt(i);
+                if (c == '{' || c == '}' || c == '\\') {
+                    esced[dst++] = '\\';
                 }
-                if (next < ln) b.append(s.substring(next));
-                s = b.toString();
-                break;
-            } // if c ==
-        } // for
-        return s;
+                esced[dst++] = c;
+            }
+            if (lastEscIdx != ln - 1) {
+                s.getChars(lastEscIdx + 1, ln, esced, dst);
+            }
+            
+            return String.valueOf(esced);
+        }
     }
+    
+    /**
+     * Like {@link #RTFEnc(String)}, but writes the result into a {@link Writer}.
+     * 
+     * @since 2.3.24
+     */
+    public static void RTFEnc(String s, Writer out) throws IOException {
+        int writtenEnd = 0;  // exclusive end
+        int ln = s.length();
+        for (int i = 0; i < ln; i++) {
+            char c = s.charAt(i);
+            if (c == '{' || c == '}' || c == '\\') {
+                int flushLn = i - writtenEnd;
+                if (flushLn != 0) {
+                    out.write(s, writtenEnd, flushLn);
+                }
+                out.write('\\');
+                writtenEnd = i; // Not i + 1, so c will be written out later
+            }
+        }
+        if (writtenEnd < ln) {
+            out.write(s, writtenEnd, ln - writtenEnd);
+        }
+    }
+    
 
     /**
      * URL encoding (like%20this) for query parameter values, path <em>segments</em>, fragments; this encodes all
@@ -293,7 +341,10 @@ public class StringUtil {
     /**
      * Like {@link #URLEnc(String, String)} but doesn't escape the slash character ({@code /}).
      * This can be used to encode a path only if you know that no folder or file name will contain {@code /}
-     * character.
+     * character (not in the path, but in the name itself), which usually stands, as the commonly used OS-es don't
+     * allow that.
+     * 
+     * @since 2.3.21
      */
     public static String URLPathEnc(String s, String charset) throws UnsupportedEncodingException {
         return URLEnc(s, charset, true);
@@ -314,7 +365,7 @@ public class StringUtil {
             return s;
         }
 
-        StringBuffer b = new StringBuffer(ln + ln / 3 + 2);
+        StringBuilder b = new StringBuilder(ln + ln / 3 + 2);
         b.append(s.substring(0, i));
 
         int encStart = i;
@@ -363,11 +414,9 @@ public class StringUtil {
                 || keepSlash && c == '/';
     }
     
-    private static char[] createEscapes()
-    {
+    private static char[] createEscapes() {
         char[] escapes = new char['\\' + 1];
-        for(int i = 0; i < 32; ++i)
-        {
+        for (int i = 0; i < 32; ++i) {
             escapes[i] = 1;
         }
         escapes['\\'] = '\\';
@@ -381,62 +430,96 @@ public class StringUtil {
         escapes['\n'] = 'n';
         escapes['\f'] = 'f';
         escapes['\r'] = 'r';
-        escapes['$'] = '$';
         return escapes;
     }
 
-    public static String FTLStringLiteralEnc(String s)
-    {
-        StringBuffer buf = null;
-        int l = s.length();
-        int el = ESCAPES.length;
-        for(int i = 0; i < l; i++)
-        {
+    /**
+     * Escapes a string according the FTL string literal escaping rules, assuming the literal is quoted with
+     * {@code quotation}; it doesn't add the quotation marks itself.
+     * 
+     * @param quotation
+     *            Either {@code '"'} or {@code '\''}. It's assumed that the string literal whose part we calculate is
+     *            enclosed within this kind of quotation mark. Thus, the other kind of quotation character will not be
+     *            escaped in the result.
+     *
+     * @since 2.3.22
+     */
+    public static String FTLStringLiteralEnc(String s, char quotation) {
+        return FTLStringLiteralEnc(s, quotation, false);
+    }
+    
+    /**
+     * Escapes a string according the FTL string literal escaping rules; it doesn't add the quotation marks. As this
+     * method doesn't know if the string literal is quoted with reuglar quotation marks or apostrophe quute, it will
+     * escape both.
+     * 
+     * @see #FTLStringLiteralEnc(String, char)
+     */
+    public static String FTLStringLiteralEnc(String s) {
+        return FTLStringLiteralEnc(s, (char) 0, false);
+    }
+
+    private static String FTLStringLiteralEnc(String s, char quotation, boolean addQuotation) {
+        final int ln = s.length();
+        
+        final char otherQuotation;
+        if (quotation == 0) {
+            otherQuotation = 0;
+        } else if (quotation == '"') {
+            otherQuotation = '\'';
+        } else if (quotation == '\'') {
+            otherQuotation = '"';
+        } else {
+            throw new IllegalArgumentException("Unsupported quotation character: " + quotation);
+        }
+        
+        final int escLn = ESCAPES.length;
+        StringBuilder buf = null;
+        for (int i = 0; i < ln; i++) {
             char c = s.charAt(i);
-            if(c < el)
-            {
-                char escape = ESCAPES[c];
-                switch(escape)
-                {
-                    case 0:
-                    {
-                        if (buf != null) {
-                            buf.append(c);
-                        }
-                        break;
-                    }
-                    case 1:
-                    {
-                        if (buf == null) {
-                            buf = new StringBuffer(s.length() + 3);
-                            buf.append(s.substring(0, i));
-                        }
-                        // hex encoding for characters below 0x20
-                        // that have no other escape representation
-                        buf.append("\\x00");
-                        int c2 = (c >> 4) & 0x0F;
-                        c = (char) (c & 0x0F);
-                        buf.append((char) (c2 < 10 ? c2 + '0' : c2 - 10 + 'A'));
-                        buf.append((char) (c < 10 ? c + '0' : c - 10 + 'A'));
-                        break;
-                    }
-                    default:
-                    {
-                        if (buf == null) {
-                            buf = new StringBuffer(s.length() + 2);
-                            buf.append(s.substring(0, i));
-                        }
-                        buf.append('\\');
-                        buf.append(escape);
-                    }
-                }
-            } else {
+            char escape =
+                    c < escLn ? ESCAPES[c] :
+                    c == '{' && i > 0 && isInterpolationStart(s.charAt(i - 1)) ? '{' :
+                    0;
+            if (escape == 0 || escape == otherQuotation) {
                 if (buf != null) {
                     buf.append(c);
                 }
+            } else {
+                if (buf == null) {
+                    buf = new StringBuilder(s.length() + 4 + (addQuotation ? 2 : 0));
+                    if (addQuotation) {
+                        buf.append(quotation);
+                    }
+                    buf.append(s.substring(0, i));
+                }
+                if (escape == 1) {
+                    // hex encoding for characters below 0x20
+                    // that have no other escape representation
+                    buf.append("\\x00");
+                    int c2 = (c >> 4) & 0x0F;
+                    c = (char) (c & 0x0F);
+                    buf.append((char) (c2 < 10 ? c2 + '0' : c2 - 10 + 'A'));
+                    buf.append((char) (c < 10 ? c + '0' : c - 10 + 'A'));
+                } else {
+                    buf.append('\\');
+                    buf.append(escape);
+                }
             }
         }
-        return buf == null ? s : buf.toString();
+        
+        if (buf == null) {
+            return addQuotation ? quotation + s + quotation : s;
+        } else {
+            if (addQuotation) {
+                buf.append(quotation);
+            }
+            return buf.toString();
+        }
+    }
+
+    private static boolean isInterpolationStart(char c) {
+        return c == '$' || c == '#';
     }
 
     /**
@@ -444,7 +527,7 @@ public class StringUtil {
      *
      * \\, \", \', \n, \t, \r, \b and \f will be replaced according to
      * Java rules. In additional, it knows \g, \l, \a and \{ which are
-     * replaced with &lt;, >, &amp; and { respectively.
+     * replaced with &lt;, &gt;, &amp; and { respectively.
      * \x works as hexadecimal character code escape. The character
      * codes are interpreted according to UCS basic plane (Unicode).
      * "f\x006Fo", "f\x06Fo" and "f\x6Fo" will be "foo".
@@ -466,7 +549,7 @@ public class StringUtil {
 
         int lidx = s.length() - 1;
         int bidx = 0;
-        StringBuffer buf = new StringBuffer(lidx);
+        StringBuilder buf = new StringBuilder(lidx);
         do {
             buf.append(s.substring(bidx, idx));
             if (idx >= lidx) {
@@ -564,7 +647,7 @@ public class StringUtil {
     public static Locale deduceLocale(String input) {
        if (input == null) return null;
        Locale locale = Locale.getDefault();
-       if (input.length() > 0 && input.charAt(0) == '"') input = input.substring(1, input.length() -1);
+       if (input.length() > 0 && input.charAt(0) == '"') input = input.substring(1, input.length() - 1);
        StringTokenizer st = new StringTokenizer(input, ",_ ");
        String lang = "", country = "";
        if (st.hasMoreTokens()) {
@@ -575,8 +658,7 @@ public class StringUtil {
        }
        if (!st.hasMoreTokens()) {
           locale = new Locale(lang, country);
-       }
-       else {
+       } else {
           locale = new Locale(lang, country, st.nextToken());
        }
        return locale;
@@ -584,7 +666,7 @@ public class StringUtil {
 
     public static String capitalize(String s) {
         StringTokenizer st = new StringTokenizer(s, " \t\r\n", true);
-        StringBuffer buf = new StringBuffer(s.length());
+        StringBuilder buf = new StringBuilder(s.length());
         while (st.hasMoreTokens()) {
             String tok = st.nextToken();
             buf.append(tok.substring(0, 1).toUpperCase());
@@ -595,7 +677,7 @@ public class StringUtil {
 
     public static boolean getYesNo(String s) {
         if (s.startsWith("\"")) {
-            s = s.substring(1, s.length() -1);
+            s = s.substring(1, s.length() - 1);
 
         }
         if (s.equalsIgnoreCase("n")
@@ -603,8 +685,7 @@ public class StringUtil {
                 || s.equalsIgnoreCase("f")
                 || s.equalsIgnoreCase("false")) {
             return false;
-        }
-        else if  (s.equalsIgnoreCase("y")
+        } else if (s.equalsIgnoreCase("y")
                 || s.equalsIgnoreCase("yes")
                 || s.equalsIgnoreCase("t")
                 || s.equalsIgnoreCase("true")) {
@@ -693,9 +774,8 @@ public class StringUtil {
                                   String oldsub, 
                                   String newsub, 
                                   boolean caseInsensitive,
-                                  boolean firstOnly) 
-    {
-        StringBuffer buf;
+                                  boolean firstOnly) {
+        StringBuilder buf;
         int tln;
         int oln = oldsub.length();
         
@@ -708,7 +788,7 @@ public class StringUtil {
                     return newsub + text;
                 } else {
                     tln = text.length();
-                    buf = new StringBuffer(tln + (tln + 1) * nln);
+                    buf = new StringBuilder(tln + (tln + 1) * nln);
                     buf.append(newsub);
                     for (int i = 0; i < tln; i++) {
                         buf.append(text.charAt(i));
@@ -726,7 +806,7 @@ public class StringUtil {
             }
             int b = 0;
             tln = text.length();
-            buf = new StringBuffer(
+            buf = new StringBuilder(
                     tln + Math.max(newsub.length() - oln, 0) * 3);
             do {
                 buf.append(text.substring(b, e));
@@ -776,7 +856,7 @@ public class StringUtil {
             return "null";
         }
         int ln = s.length();
-        StringBuffer b = new StringBuffer(ln + 4);
+        StringBuilder b = new StringBuilder(ln + 4);
         b.append('"');
         for (int i = 0; i < ln; i++) {
             char c = s.charAt(i);
@@ -820,7 +900,7 @@ public class StringUtil {
     
     /**
      * Same as {@link #jQuoteNoXSS(String)} but also escapes <code>'&lt;'</code>
-     * as <code>\u003C</code>. This is used for log messages to prevent XSS
+     * as <code>\</code><code>u003C</code>. This is used for log messages to prevent XSS
      * on poorly written Web-based log viewers. 
      */
     public static String jQuoteNoXSS(String s) {
@@ -828,7 +908,7 @@ public class StringUtil {
             return "null";
         }
         int ln = s.length();
-        StringBuffer b = new StringBuffer(ln + 4);
+        StringBuilder b = new StringBuilder(ln + 4);
         b.append('"');
         for (int i = 0; i < ln; i++) {
             char c = s.charAt(i);
@@ -865,6 +945,307 @@ public class StringUtil {
     }
     
     /**
+     * Creates a <em>quoted</em> FTL string literal from a string, using escaping where necessary. The result either
+     * uses regular quotation marks (UCS 0x22) or apostrophe-quotes (UCS 0x27), depending on the string content.
+     * (Currently, apostrophe-quotes will be chosen exactly when the string contains regular quotation character and
+     * doesn't contain apostrophe-quote character.)
+     *
+     * @param s
+     *            The value that should be converted to an FTL string literal whose evaluated value equals to {@code s}
+     *
+     * @since 2.3.22
+     */
+    public static String ftlQuote(String s) {
+        char quotation;
+        if (s.indexOf('"') != -1 && s.indexOf('\'') == -1) {
+            quotation = '\'';
+        } else {
+            quotation = '\"';
+        }
+        return FTLStringLiteralEnc(s, quotation, true);
+    }
+    
+    /**
+     * Tells if a character can occur on the beginning of an FTL identifier expression (without escaping). 
+     * 
+     * @since 2.3.22
+     */
+    public static boolean isFTLIdentifierStart(final char c) {
+        // This code was generated on JDK 1.8.0_20 Win64 with src/main/misc/identifierChars/IdentifierCharGenerator.java
+        if (c < 0xAA) { // This branch was edited for speed.
+            if (c >= 'a' && c <= 'z' || c >= '@' && c <= 'Z') {
+                return true;
+            } else {
+                return c == '$' || c == '_'; 
+            }
+        } else { // c >= 0xAA
+            if (c < 0xA7F8) {
+                if (c < 0x2D6F) {
+                    if (c < 0x2128) {
+                        if (c < 0x2090) {
+                            if (c < 0xD8) {
+                                if (c < 0xBA) {
+                                    return c == 0xAA || c == 0xB5;
+                                } else { // c >= 0xBA
+                                    return c == 0xBA || c >= 0xC0 && c <= 0xD6;
+                                }
+                            } else { // c >= 0xD8
+                                if (c < 0x2071) {
+                                    return c >= 0xD8 && c <= 0xF6 || c >= 0xF8 && c <= 0x1FFF;
+                                } else { // c >= 0x2071
+                                    return c == 0x2071 || c == 0x207F;
+                                }
+                            }
+                        } else { // c >= 0x2090
+                            if (c < 0x2115) {
+                                if (c < 0x2107) {
+                                    return c >= 0x2090 && c <= 0x209C || c == 0x2102;
+                                } else { // c >= 0x2107
+                                    return c == 0x2107 || c >= 0x210A && c <= 0x2113;
+                                }
+                            } else { // c >= 0x2115
+                                if (c < 0x2124) {
+                                    return c == 0x2115 || c >= 0x2119 && c <= 0x211D;
+                                } else { // c >= 0x2124
+                                    return c == 0x2124 || c == 0x2126;
+                                }
+                            }
+                        }
+                    } else { // c >= 0x2128
+                        if (c < 0x2C30) {
+                            if (c < 0x2145) {
+                                if (c < 0x212F) {
+                                    return c == 0x2128 || c >= 0x212A && c <= 0x212D;
+                                } else { // c >= 0x212F
+                                    return c >= 0x212F && c <= 0x2139 || c >= 0x213C && c <= 0x213F;
+                                }
+                            } else { // c >= 0x2145
+                                if (c < 0x2183) {
+                                    return c >= 0x2145 && c <= 0x2149 || c == 0x214E;
+                                } else { // c >= 0x2183
+                                    return c >= 0x2183 && c <= 0x2184 || c >= 0x2C00 && c <= 0x2C2E;
+                                }
+                            }
+                        } else { // c >= 0x2C30
+                            if (c < 0x2D00) {
+                                if (c < 0x2CEB) {
+                                    return c >= 0x2C30 && c <= 0x2C5E || c >= 0x2C60 && c <= 0x2CE4;
+                                } else { // c >= 0x2CEB
+                                    return c >= 0x2CEB && c <= 0x2CEE || c >= 0x2CF2 && c <= 0x2CF3;
+                                }
+                            } else { // c >= 0x2D00
+                                if (c < 0x2D2D) {
+                                    return c >= 0x2D00 && c <= 0x2D25 || c == 0x2D27;
+                                } else { // c >= 0x2D2D
+                                    return c == 0x2D2D || c >= 0x2D30 && c <= 0x2D67;
+                                }
+                            }
+                        }
+                    }
+                } else { // c >= 0x2D6F
+                    if (c < 0x31F0) {
+                        if (c < 0x2DD0) {
+                            if (c < 0x2DB0) {
+                                if (c < 0x2DA0) {
+                                    return c == 0x2D6F || c >= 0x2D80 && c <= 0x2D96;
+                                } else { // c >= 0x2DA0
+                                    return c >= 0x2DA0 && c <= 0x2DA6 || c >= 0x2DA8 && c <= 0x2DAE;
+                                }
+                            } else { // c >= 0x2DB0
+                                if (c < 0x2DC0) {
+                                    return c >= 0x2DB0 && c <= 0x2DB6 || c >= 0x2DB8 && c <= 0x2DBE;
+                                } else { // c >= 0x2DC0
+                                    return c >= 0x2DC0 && c <= 0x2DC6 || c >= 0x2DC8 && c <= 0x2DCE;
+                                }
+                            }
+                        } else { // c >= 0x2DD0
+                            if (c < 0x3031) {
+                                if (c < 0x2E2F) {
+                                    return c >= 0x2DD0 && c <= 0x2DD6 || c >= 0x2DD8 && c <= 0x2DDE;
+                                } else { // c >= 0x2E2F
+                                    return c == 0x2E2F || c >= 0x3005 && c <= 0x3006;
+                                }
+                            } else { // c >= 0x3031
+                                if (c < 0x3040) {
+                                    return c >= 0x3031 && c <= 0x3035 || c >= 0x303B && c <= 0x303C;
+                                } else { // c >= 0x3040
+                                    return c >= 0x3040 && c <= 0x318F || c >= 0x31A0 && c <= 0x31BA;
+                                }
+                            }
+                        }
+                    } else { // c >= 0x31F0
+                        if (c < 0xA67F) {
+                            if (c < 0xA4D0) {
+                                if (c < 0x3400) {
+                                    return c >= 0x31F0 && c <= 0x31FF || c >= 0x3300 && c <= 0x337F;
+                                } else { // c >= 0x3400
+                                    return c >= 0x3400 && c <= 0x4DB5 || c >= 0x4E00 && c <= 0xA48C;
+                                }
+                            } else { // c >= 0xA4D0
+                                if (c < 0xA610) {
+                                    return c >= 0xA4D0 && c <= 0xA4FD || c >= 0xA500 && c <= 0xA60C;
+                                } else { // c >= 0xA610
+                                    return c >= 0xA610 && c <= 0xA62B || c >= 0xA640 && c <= 0xA66E;
+                                }
+                            }
+                        } else { // c >= 0xA67F
+                            if (c < 0xA78B) {
+                                if (c < 0xA717) {
+                                    return c >= 0xA67F && c <= 0xA697 || c >= 0xA6A0 && c <= 0xA6E5;
+                                } else { // c >= 0xA717
+                                    return c >= 0xA717 && c <= 0xA71F || c >= 0xA722 && c <= 0xA788;
+                                }
+                            } else { // c >= 0xA78B
+                                if (c < 0xA7A0) {
+                                    return c >= 0xA78B && c <= 0xA78E || c >= 0xA790 && c <= 0xA793;
+                                } else { // c >= 0xA7A0
+                                    return c >= 0xA7A0 && c <= 0xA7AA;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else { // c >= 0xA7F8
+                if (c < 0xAB20) {
+                    if (c < 0xAA44) {
+                        if (c < 0xA8FB) {
+                            if (c < 0xA840) {
+                                if (c < 0xA807) {
+                                    return c >= 0xA7F8 && c <= 0xA801 || c >= 0xA803 && c <= 0xA805;
+                                } else { // c >= 0xA807
+                                    return c >= 0xA807 && c <= 0xA80A || c >= 0xA80C && c <= 0xA822;
+                                }
+                            } else { // c >= 0xA840
+                                if (c < 0xA8D0) {
+                                    return c >= 0xA840 && c <= 0xA873 || c >= 0xA882 && c <= 0xA8B3;
+                                } else { // c >= 0xA8D0
+                                    return c >= 0xA8D0 && c <= 0xA8D9 || c >= 0xA8F2 && c <= 0xA8F7;
+                                }
+                            }
+                        } else { // c >= 0xA8FB
+                            if (c < 0xA984) {
+                                if (c < 0xA930) {
+                                    return c == 0xA8FB || c >= 0xA900 && c <= 0xA925;
+                                } else { // c >= 0xA930
+                                    return c >= 0xA930 && c <= 0xA946 || c >= 0xA960 && c <= 0xA97C;
+                                }
+                            } else { // c >= 0xA984
+                                if (c < 0xAA00) {
+                                    return c >= 0xA984 && c <= 0xA9B2 || c >= 0xA9CF && c <= 0xA9D9;
+                                } else { // c >= 0xAA00
+                                    return c >= 0xAA00 && c <= 0xAA28 || c >= 0xAA40 && c <= 0xAA42;
+                                }
+                            }
+                        }
+                    } else { // c >= 0xAA44
+                        if (c < 0xAAC0) {
+                            if (c < 0xAA80) {
+                                if (c < 0xAA60) {
+                                    return c >= 0xAA44 && c <= 0xAA4B || c >= 0xAA50 && c <= 0xAA59;
+                                } else { // c >= 0xAA60
+                                    return c >= 0xAA60 && c <= 0xAA76 || c == 0xAA7A;
+                                }
+                            } else { // c >= 0xAA80
+                                if (c < 0xAAB5) {
+                                    return c >= 0xAA80 && c <= 0xAAAF || c == 0xAAB1;
+                                } else { // c >= 0xAAB5
+                                    return c >= 0xAAB5 && c <= 0xAAB6 || c >= 0xAAB9 && c <= 0xAABD;
+                                }
+                            }
+                        } else { // c >= 0xAAC0
+                            if (c < 0xAAF2) {
+                                if (c < 0xAADB) {
+                                    return c == 0xAAC0 || c == 0xAAC2;
+                                } else { // c >= 0xAADB
+                                    return c >= 0xAADB && c <= 0xAADD || c >= 0xAAE0 && c <= 0xAAEA;
+                                }
+                            } else { // c >= 0xAAF2
+                                if (c < 0xAB09) {
+                                    return c >= 0xAAF2 && c <= 0xAAF4 || c >= 0xAB01 && c <= 0xAB06;
+                                } else { // c >= 0xAB09
+                                    return c >= 0xAB09 && c <= 0xAB0E || c >= 0xAB11 && c <= 0xAB16;
+                                }
+                            }
+                        }
+                    }
+                } else { // c >= 0xAB20
+                    if (c < 0xFB46) {
+                        if (c < 0xFB13) {
+                            if (c < 0xAC00) {
+                                if (c < 0xABC0) {
+                                    return c >= 0xAB20 && c <= 0xAB26 || c >= 0xAB28 && c <= 0xAB2E;
+                                } else { // c >= 0xABC0
+                                    return c >= 0xABC0 && c <= 0xABE2 || c >= 0xABF0 && c <= 0xABF9;
+                                }
+                            } else { // c >= 0xAC00
+                                if (c < 0xD7CB) {
+                                    return c >= 0xAC00 && c <= 0xD7A3 || c >= 0xD7B0 && c <= 0xD7C6;
+                                } else { // c >= 0xD7CB
+                                    return c >= 0xD7CB && c <= 0xD7FB || c >= 0xF900 && c <= 0xFB06;
+                                }
+                            }
+                        } else { // c >= 0xFB13
+                            if (c < 0xFB38) {
+                                if (c < 0xFB1F) {
+                                    return c >= 0xFB13 && c <= 0xFB17 || c == 0xFB1D;
+                                } else { // c >= 0xFB1F
+                                    return c >= 0xFB1F && c <= 0xFB28 || c >= 0xFB2A && c <= 0xFB36;
+                                }
+                            } else { // c >= 0xFB38
+                                if (c < 0xFB40) {
+                                    return c >= 0xFB38 && c <= 0xFB3C || c == 0xFB3E;
+                                } else { // c >= 0xFB40
+                                    return c >= 0xFB40 && c <= 0xFB41 || c >= 0xFB43 && c <= 0xFB44;
+                                }
+                            }
+                        }
+                    } else { // c >= 0xFB46
+                        if (c < 0xFF21) {
+                            if (c < 0xFDF0) {
+                                if (c < 0xFD50) {
+                                    return c >= 0xFB46 && c <= 0xFBB1 || c >= 0xFBD3 && c <= 0xFD3D;
+                                } else { // c >= 0xFD50
+                                    return c >= 0xFD50 && c <= 0xFD8F || c >= 0xFD92 && c <= 0xFDC7;
+                                }
+                            } else { // c >= 0xFDF0
+                                if (c < 0xFE76) {
+                                    return c >= 0xFDF0 && c <= 0xFDFB || c >= 0xFE70 && c <= 0xFE74;
+                                } else { // c >= 0xFE76
+                                    return c >= 0xFE76 && c <= 0xFEFC || c >= 0xFF10 && c <= 0xFF19;
+                                }
+                            }
+                        } else { // c >= 0xFF21
+                            if (c < 0xFFCA) {
+                                if (c < 0xFF66) {
+                                    return c >= 0xFF21 && c <= 0xFF3A || c >= 0xFF41 && c <= 0xFF5A;
+                                } else { // c >= 0xFF66
+                                    return c >= 0xFF66 && c <= 0xFFBE || c >= 0xFFC2 && c <= 0xFFC7;
+                                }
+                            } else { // c >= 0xFFCA
+                                if (c < 0xFFDA) {
+                                    return c >= 0xFFCA && c <= 0xFFCF || c >= 0xFFD2 && c <= 0xFFD7;
+                                } else { // c >= 0xFFDA
+                                    return c >= 0xFFDA && c <= 0xFFDC;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Tells if a character can occur in an FTL identifier expression (without escaping) as other than the first
+     * character. 
+     * 
+     * @since 2.3.22
+     */
+    public static boolean isFTLIdentifierPart(final char c) {
+        return isFTLIdentifierStart(c) || (c >= '0' && c <= '9');  
+    }
+    
+    /**
      * Escapes the <code>String</code> with the escaping rules of Java language
      * string literals, so it's safe to insert the value into a string literal.
      * The resulting string will not be quoted.
@@ -880,7 +1261,7 @@ public class StringUtil {
         for (int i = 0; i < ln; i++) {
             char c = s.charAt(i);
             if (c == '"' || c == '\\' || c < 0x20) {
-                StringBuffer b = new StringBuffer(ln + 4);
+                StringBuilder b = new StringBuilder(ln + 4);
                 b.append(s.substring(0, i));
                 while (true) {
                     if (c == '"') {
@@ -956,7 +1337,7 @@ public class StringUtil {
      * 
      * The escaped characters are:
      * 
-     * <table style="width: auto; border-collapse: collapse" border="1">
+     * <table style="width: auto; border-collapse: collapse" border="1" summary="Characters escaped by jsStringEnc">
      * <tr>
      *   <th>Input
      *   <th>Output
@@ -973,8 +1354,8 @@ public class StringUtil {
      *   <td><tt>/</tt> if the method can't know that it won't be directly after <tt>&lt;</tt>
      *   <td><tt>\/</tt>
      * <tr>
-     *   <td><tt>></tt> if the method can't know that it won't be directly after <tt>]]</tt> or <tt>--</tt>
-     *   <td>JavaScript: <tt>\></tt>; JSON: <tt>\<tt>u</tt>003E</tt>
+     *   <td><tt>&gt;</tt> if the method can't know that it won't be directly after <tt>]]</tt> or <tt>--</tt>
+     *   <td>JavaScript: <tt>\&gt;</tt>; JSON: <tt>\</tt><tt>u003E</tt>
      * <tr>
      *   <td><tt>&lt;</tt> if the method can't know that it won't be directly followed by <tt>!</tt> or <tt>?</tt> 
      *   <td><tt><tt>\</tt>u003C</tt>
@@ -997,11 +1378,11 @@ public class StringUtil {
         NullArgumentException.check("s", s);
         
         int ln = s.length();
-        StringBuffer sb = null;
+        StringBuilder sb = null;
         for (int i = 0; i < ln; i++) {
             final char c = s.charAt(i);
             final int escapeType;  // 
-            if (!(c > '>' && c < 0x7F && c != '\\') && c != ' ' && !(c >= 0xA0 && c < 0x2028))  {  // skip common chars
+            if (!(c > '>' && c < 0x7F && c != '\\') && c != ' ' && !(c >= 0xA0 && c < 0x2028)) {  // skip common chars
                 if (c <= 0x1F) {  // control chars range 1
                     if (c == '\n') {
                         escapeType = 'n';
@@ -1061,7 +1442,7 @@ public class StringUtil {
                 
                 if (escapeType != NO_ESC) { // If needs escaping
                     if (sb == null) {
-                        sb = new StringBuffer(ln + 6);
+                        sb = new StringBuilder(ln + 6);
                         sb.append(s.substring(0, i));
                     }
                     
@@ -1273,13 +1654,13 @@ public class StringUtil {
      * (This routine might only be 99% accurate. Should maybe REVISIT) 
      */
     static public boolean isXMLID(String name) {
-        for (int i=0; i<name.length(); i++) {
+        for (int i = 0; i < name.length(); i++) {
             char c = name.charAt(i);
-            if (i==0) {
-                if (c== '-' || c=='.' || Character.isDigit(c))
+            if (i == 0) {
+                if (c == '-' || c == '.' || Character.isDigit(c))
                     return false;
             }
-            if (!Character.isLetterOrDigit(c) && c != ':' && c != '_' && c != '-' && c!='.') {
+            if (!Character.isLetterOrDigit(c) && c != ':' && c != '_' && c != '-' && c != '.') {
                 return false;
             }
         }
@@ -1337,7 +1718,7 @@ public class StringUtil {
             return s;
         }
         
-        StringBuffer res = new StringBuffer(minLength);
+        StringBuilder res = new StringBuilder(minLength);
         
         int dif = minLength - ln;
         for (int i = 0; i < dif; i++) {
@@ -1366,7 +1747,7 @@ public class StringUtil {
             return s;
         }
         
-        StringBuffer res = new StringBuffer(minLength);
+        StringBuilder res = new StringBuilder(minLength);
 
         int dif = minLength - ln;
         int fln = filling.length();
@@ -1415,7 +1796,7 @@ public class StringUtil {
             return s;
         }
         
-        StringBuffer res = new StringBuffer(minLength);
+        StringBuilder res = new StringBuilder(minLength);
 
         res.append(s);
         
@@ -1446,7 +1827,7 @@ public class StringUtil {
             return s;
         }
         
-        StringBuffer res = new StringBuffer(minLength);
+        StringBuilder res = new StringBuilder(minLength);
 
         res.append(s);
 
@@ -1492,8 +1873,9 @@ public class StringUtil {
     }
 
     /**
-     * Tries to run toString(), but if that fails, returns a {@code "[toString failed: " + e + "]"} instead.
-     * Also, it returns {@code null} for {@code null} parameter.
+     * Tries to run {@code toString()}, but if that fails, returns a
+     * {@code "[com.example.SomeClass.toString() failed: " + e + "]"} instead. Also, it returns {@code null} for
+     * {@code null} parameter.
      * 
      * @since 2.3.20
      */
@@ -1503,18 +1885,261 @@ public class StringUtil {
         try {
             return object.toString();
         } catch (Throwable e) {
-            return failedToStringSubstitute(e);
+            return failedToStringSubstitute(object, e);
         }
     }
 
-    private static String failedToStringSubstitute(Throwable e) {
+    private static String failedToStringSubstitute(Object object, Throwable e) {
         String eStr;
         try {
             eStr = e.toString();
         } catch (Throwable e2) {
             eStr = ClassUtil.getShortClassNameOfObject(e);
         }
-        return "[toString() failed: " + eStr + "]";
+        return "[" + ClassUtil.getShortClassNameOfObject(object) + ".toString() failed: " + eStr + "]";
+    }
+    
+    /**
+     * Converts {@code 1}, {@code 2}, {@code 3} and so forth to {@code "A"}, {@code "B"}, {@code "C"} and so fort. When
+     * reaching {@code "Z"}, it continues like {@code "AA"}, {@code "AB"}, etc. The lowest supported number is 1, but
+     * there's no upper limit.
+     * 
+     * @throws IllegalArgumentException
+     *             If the argument is 0 or less.
+     * 
+     * @since 2.3.22
+     */
+    public static String toUpperABC(int n) {
+        return toABC(n, 'A');
+    }
+
+    /**
+     * Same as {@link #toUpperABC(int)}, but produces lower case result, like {@code "ab"}.
+     * 
+     * @since 2.3.22
+     */
+    public static String toLowerABC(int n) {
+        return toABC(n, 'a');
+    }
+
+    /**
+     * @param oneDigit
+     *            The character that stands for the value 1.
+     */
+    private static String toABC(final int n, char oneDigit) {
+        if (n < 1) {
+            throw new IllegalArgumentException("Can't convert 0 or negative "
+                    + "numbers to latin-number: " + n);
+        }
+        
+        // First find out how many "digits" will we need. We start from A, then
+        // try AA, then AAA, etc. (Note that the smallest digit is "A", which is
+        // 1, not 0. Hence this isn't like a usual 26-based number-system):
+        int reached = 1;
+        int weight = 1;
+        while (true) {
+            int nextWeight = weight * 26;
+            int nextReached = reached + nextWeight;
+            if (nextReached <= n) {
+                // So we will have one more digit
+                weight = nextWeight;
+                reached = nextReached;
+            } else {
+                // No more digits
+                break;
+            }
+        }
+        
+        // Increase the digits of the place values until we get as close
+        // to n as possible (but don't step over it).
+        StringBuilder sb = new StringBuilder();
+        while (weight != 0) {
+            // digitIncrease: how many we increase the digit which is already 1
+            final int digitIncrease = (n - reached) / weight;
+            sb.append((char) (oneDigit + digitIncrease));
+            reached += digitIncrease * weight;
+            
+            weight /= 26;
+        }
+        
+        return sb.toString();
+    }
+
+    /**
+     * Behaves exactly like {@link String#trim()}, but works on arrays. If the resulting array would have the same
+     * content after trimming, it returns the original array instance. Otherwise it returns a new array instance (or
+     * {@link CollectionUtils#EMPTY_CHAR_ARRAY}).
+     * 
+     * @since 2.3.22
+     */
+    public static char[] trim(final char[] cs) {
+        if (cs.length == 0) {
+            return cs;
+        }
+        
+        int start = 0;
+        int end = cs.length;
+        while (start < end && cs[start] <= ' ') {
+            start++;
+        }
+        while (start < end && cs[end - 1] <= ' ') {
+            end--;
+        }
+        
+        if (start == 0 && end == cs.length) {
+            return cs;
+        }
+        if (start == end) {
+            return CollectionUtils.EMPTY_CHAR_ARRAY;
+        }
+        
+        char[] newCs = new char[end - start];
+        System.arraycopy(cs, start, newCs, 0, end - start);
+        return newCs;
+    }
+
+    /**
+     * Tells if {@link String#trim()} will return a 0-length string for the {@link String} equivalent of the argument.
+     * 
+     * @since 2.3.22
+     */
+    public static boolean isTrimmableToEmpty(char[] text) {
+        return isTrimmableToEmpty(text, 0, text.length);
+    }
+
+    /**
+     * Like {@link #isTrimmableToEmpty(char[])}, but acts on a sub-array that starts at {@code start} (inclusive index).
+     * 
+     * @since 2.3.23
+     */
+    public static boolean isTrimmableToEmpty(char[] text, int start) {
+        return isTrimmableToEmpty(text, start, text.length);
+    }
+    
+    /**
+     * Like {@link #isTrimmableToEmpty(char[])}, but acts on a sub-array that starts at {@code start} (inclusive index)
+     * and ends at {@code end} (exclusive index).
+     * 
+     * @since 2.3.23
+     */
+    public static boolean isTrimmableToEmpty(char[] text, int start, int end) {
+        for (int i = start; i < end; i++) {
+            // We follow Java's String.trim() here, which simply states that c <= ' ' is whitespace.
+            if (text[i] > ' ') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Same as {@link #globToRegularExpression(String, boolean)} with {@code caseInsensitive} argument {@code false}.
+     * 
+     * @since 2.3.24
+     */
+    public static Pattern globToRegularExpression(String glob) {
+        return globToRegularExpression(glob, false);
+    }
+    
+    /**
+     * Creates a regular expression from a glob. The glob must use {@code /} for as file separator, not {@code \}
+     * (backslash), and is always case sensitive.
+     *
+     * <p>This glob implementation recognizes these special characters:
+     * <ul>
+     *   <li>{@code ?}: Wildcard that matches exactly one character, other than {@code /} 
+     *   <li>{@code *}: Wildcard that matches zero, one or multiple characters, other than {@code /}
+     *   <li>{@code **}: Wildcard that matches zero, one or multiple directories. For example, {@code **}{@code /head.ftl}
+     *       matches {@code foo/bar/head.ftl}, {@code foo/head.ftl} and {@code head.ftl} too. {@code **} must be either
+     *       preceded by {@code /} or be at the beginning of the glob. {@code **} must be either followed by {@code /} or be
+     *       at the end of the glob. When {@code **} is at the end of the glob, it also matches file names, like
+     *       {@code a/**} matches {@code a/b/c.ftl}. If the glob only consist of a {@code **}, it will be a match for
+     *       everything.
+     *   <li>{@code \} (backslash): Makes the next character non-special (a literal). For example {@code How\?.ftl} will
+     *       match {@code How?.ftl}, but not {@code HowX.ftl}. Naturally, two backslashes produce one literal backslash. 
+     *   <li>{@code [}: Reserved for future purposes; can't be used
+     *   <li><code>{</code>: Reserved for future purposes; can't be used
+     * </ul>
+     * 
+     * @since 2.3.24
+     */
+    public static Pattern globToRegularExpression(String glob, boolean caseInsensitive) {
+        StringBuilder regex = new StringBuilder();
+        
+        int nextStart = 0;
+        boolean escaped = false;
+        int ln = glob.length();
+        for (int idx = 0; idx < ln; idx++) {
+            char c = glob.charAt(idx);
+            if (!escaped) {
+                if (c == '?') {
+                    appendLiteralGlobSection(regex, glob, nextStart, idx);
+                    regex.append("[^/]");
+                    nextStart = idx + 1;
+                } else if (c == '*') {
+                    appendLiteralGlobSection(regex, glob, nextStart, idx);
+                    if (idx + 1 < ln && glob.charAt(idx + 1) == '*') {
+                        if (!(idx == 0 || glob.charAt(idx - 1) == '/')) {
+                            throw new IllegalArgumentException(
+                                    "The \"**\" wildcard must be directly after a \"/\" or it must be at the "
+                                    + "beginning, in this glob: " + glob);
+                        }
+                        
+                        if (idx + 2 == ln) { // trailing "**"
+                            regex.append(".*");
+                            idx++;
+                        } else { // "**/"
+                            if (!(idx + 2 < ln && glob.charAt(idx + 2) == '/')) {
+                                throw new IllegalArgumentException(
+                                        "The \"**\" wildcard must be followed by \"/\", or must be at tehe end, "
+                                        + "in this glob: " + glob);
+                            }
+                            regex.append("(.*?/)*");
+                            idx += 2;  // "*/".length()
+                        }
+                    } else {
+                        regex.append("[^/]*");
+                    }
+                    nextStart = idx + 1;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '[' || c == '{') {
+                    throw new IllegalArgumentException(
+                            "The \"" + c + "\" glob operator is currently unsupported "
+                            + "(precede it with \\ for literal matching), "
+                            + "in this glob: " + glob);
+                }
+            } else {
+                escaped = false;
+            }
+        }
+        appendLiteralGlobSection(regex, glob, nextStart, glob.length());
+        
+        return Pattern.compile(regex.toString(), caseInsensitive ? Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE : 0);
+    }
+
+    private static void appendLiteralGlobSection(StringBuilder regex, String glob, int start, int end) {
+        if (start == end) return;
+        String part = unescapeLiteralGlobSection(glob.substring(start, end));
+        regex.append(Pattern.quote(part));
+    }
+
+    private static String unescapeLiteralGlobSection(String s) {
+        int backslashIdx = s.indexOf('\\');
+        if (backslashIdx == -1) {
+            return s;
+        }
+        int ln = s.length();
+        StringBuilder sb = new StringBuilder(ln - 1);
+        int nextStart = 0; 
+        do {
+            sb.append(s, nextStart, backslashIdx);
+            nextStart = backslashIdx + 1;
+        } while ((backslashIdx = s.indexOf('\\', nextStart + 1)) != -1);
+        if (nextStart < ln) {
+            sb.append(s, nextStart, ln);
+        }
+        return sb.toString();
     }
     
 }

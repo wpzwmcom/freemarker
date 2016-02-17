@@ -17,33 +17,80 @@
 package freemarker.core;
 
 import java.io.IOException;
+import java.io.Writer;
 
 import freemarker.template.TemplateException;
+import freemarker.template.TemplateModel;
+import freemarker.template.utility.StringUtil;
 
 /**
  * An instruction that outputs the value of an <tt>Expression</tt>.
  */
-final class DollarVariable extends TemplateElement {
+final class DollarVariable extends Interpolation {
 
     private final Expression expression;
+    
+    /** For {@code #escape x as ...} (legacy auto-escaping) */
     private final Expression escapedExpression;
+    
+    /** For OutputFormat-based auto-escaping */
+    private final OutputFormat outputFormat;
+    private final MarkupOutputFormat autoEscapeOutputFormat;
 
-    DollarVariable(Expression expression, Expression escapedExpression) {
+    DollarVariable(
+            Expression expression, Expression escapedExpression,
+            OutputFormat outputFormat, MarkupOutputFormat autoEscapeOutputFormat) {
         this.expression = expression;
         this.escapedExpression = escapedExpression;
+        this.outputFormat = outputFormat;
+        this.autoEscapeOutputFormat = autoEscapeOutputFormat;
     }
 
     /**
      * Outputs the string value of the enclosed expression.
      */
+    @Override
     void accept(Environment env) throws TemplateException, IOException {
-        env.getOut().write(escapedExpression.evalAndCoerceToString(env));
+        TemplateModel tm = escapedExpression.eval(env);
+        Writer out = env.getOut();
+        String s = EvalUtil.coerceModelToString(tm, escapedExpression, null, true, env);
+        if (s != null) {
+            if (autoEscapeOutputFormat != null) {
+                autoEscapeOutputFormat.output(s, out);
+            } else {
+                out.write(s);
+            }
+        } else {
+            TemplateMarkupOutputModel mo = (TemplateMarkupOutputModel) tm;
+            MarkupOutputFormat moOF = mo.getOutputFormat();
+            // ATTENTION: Keep this logic in sync. ?esc/?noEsc's logic!
+            if (moOF != outputFormat && !outputFormat.isOutputFormatMixingAllowed()) {
+                String srcPlainText;
+                // ATTENTION: Keep this logic in sync. ?esc/?noEsc's logic!
+                srcPlainText = moOF.getSourcePlainText(mo);
+                if (srcPlainText == null) {
+                    throw new _TemplateModelException(escapedExpression,
+                            "Tha value to print is in ", new _DelayedToString(moOF),
+                            " format, which differs from the current output format, ",
+                            new _DelayedToString(outputFormat), ". Format conversion wasn't possible.");
+                }
+                if (outputFormat instanceof MarkupOutputFormat) {
+                    ((MarkupOutputFormat) outputFormat).output(srcPlainText, out);
+                } else {
+                    out.write(srcPlainText);
+                }
+            } else {
+                moOF.output(mo, out);
+            }
+        }
     }
 
-    protected String dump(boolean canonical) {
-        StringBuffer sb = new StringBuffer();
+    @Override
+    protected String dump(boolean canonical, boolean inStringLiteral) {
+        StringBuilder sb = new StringBuilder();
         sb.append("${");
-        sb.append(expression.getCanonicalForm());
+        final String exprCF = expression.getCanonicalForm();
+        sb.append(inStringLiteral ? StringUtil.FTLStringLiteralEnc(exprCF, '"') : exprCF);
         sb.append("}");
         if (!canonical && expression != escapedExpression) {
             sb.append(" auto-escaped");            
@@ -51,30 +98,41 @@ final class DollarVariable extends TemplateElement {
         return sb.toString();
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return "${...}";
     }
 
+    @Override
     boolean heedsOpeningWhitespace() {
         return true;
     }
 
+    @Override
     boolean heedsTrailingWhitespace() {
         return true;
     }
 
+    @Override
     int getParameterCount() {
         return 1;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         if (idx != 0) throw new IndexOutOfBoundsException();
         return expression;
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         if (idx != 0) throw new IndexOutOfBoundsException();
         return ParameterRole.CONTENT;
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
     }
     
 }

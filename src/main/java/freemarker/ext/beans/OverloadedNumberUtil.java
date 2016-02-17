@@ -90,7 +90,6 @@ class OverloadedNumberUtil {
      *     indicated in the {@code targetNumTypes} parameter.
      */
     static Number addFallbackType(final Number num, final int typeFlags) {
-        // Java 5: use valueOf where possible
         final Class numClass = num.getClass();
         if (numClass == BigDecimal.class) {
             // For now we only support the backward-compatible mode that doesn't prevent roll overs and magnitude loss.
@@ -99,7 +98,7 @@ class OverloadedNumberUtil {
             BigDecimal n = (BigDecimal) num; 
             if ((typeFlags & TypeFlags.MASK_KNOWN_INTEGERS) != 0
                     && (typeFlags & TypeFlags.MASK_KNOWN_NONINTEGERS) != 0
-                    && NumberUtil.isBigDecimalInteger(n) /* <- can be expensive */) {
+                    && NumberUtil.isIntegerBigDecimal(n) /* <- can be expensive */) {
                 return new IntegerBigDecimal(n);
             } else {
                 // Either it was a non-integer, or it didn't mater what it was, as we don't have both integer and
@@ -178,10 +177,9 @@ class OverloadedNumberUtil {
                 } else if ((typeFlags & TypeFlags.INTEGER) != 0
                         && longN <= Integer.MAX_VALUE && longN >= Integer.MIN_VALUE) {
                     final int intN = (int) longN; 
-                    // Java 5: remove the "? (Number)" and ": (Number)" casts
                     return (typeFlags & TypeFlags.FLOAT) != 0 && intN >= MIN_FLOAT_OR_INT && intN <= MAX_FLOAT_OR_INT
-                                    ? (Number) new DoubleOrIntegerOrFloat((Double) num, intN)
-                                    : (Number) new DoubleOrInteger((Double) num, intN);
+                                    ? new DoubleOrIntegerOrFloat((Double) num, intN)
+                                    : new DoubleOrInteger((Double) num, intN);
                 } else if ((typeFlags & TypeFlags.LONG) != 0) {
                     if (exact) {
                         return new DoubleOrLong((Double) num, longN);
@@ -257,8 +255,8 @@ class OverloadedNumberUtil {
                 } else if ((typeFlags & TypeFlags.LONG) != 0) {
                     // We can't even go outside the range of integers, so we don't need Long variation:
                     return exact
-                            ? (Number) new FloatOrInteger((Float) num, intN)
-                            : (Number) new FloatOrByte((Float) num, (byte) intN);  // as !exact implies (-128..127)
+                            ? new FloatOrInteger((Float) num, intN)
+                            : new FloatOrByte((Float) num, (byte) intN);  // as !exact implies (-128..127)
                 }
                 // This point is reached if the float value was out of the range of target integer type(s). 
                 // Falls through!
@@ -331,34 +329,42 @@ class OverloadedNumberUtil {
         
         protected abstract Number getSourceNumber();
 
+        @Override
         public int intValue() {
             return getSourceNumber().intValue();
         }
 
+        @Override
         public long longValue() {
             return getSourceNumber().longValue();
         }
 
+        @Override
         public float floatValue() {
             return getSourceNumber().floatValue();
         }
 
+        @Override
         public double doubleValue() {
             return getSourceNumber().doubleValue();
         }
 
+        @Override
         public byte byteValue() {
             return getSourceNumber().byteValue();
         }
 
+        @Override
         public short shortValue() {
             return getSourceNumber().shortValue();
         }
 
+        @Override
         public int hashCode() {
             return getSourceNumber().hashCode();
         }
 
+        @Override
         public boolean equals(Object obj) {
             if (obj != null && this.getClass() == obj.getClass()) {
                 return getSourceNumber().equals(((NumberWithFallbackType) obj).getSourceNumber());
@@ -367,6 +373,7 @@ class OverloadedNumberUtil {
             }
         }
 
+        @Override
         public String toString() {
             return getSourceNumber().toString();
         }
@@ -399,6 +406,7 @@ class OverloadedNumberUtil {
             this.n = n;
         }
 
+        @Override
         protected Number getSourceNumber() {
             return n;
         }
@@ -417,10 +425,12 @@ class OverloadedNumberUtil {
             this.n = n;
         }
 
+        @Override
         protected Number getSourceNumber() {
             return n;
         }
 
+        @Override
         public long longValue() {
             return n.longValue();
         }
@@ -436,6 +446,7 @@ class OverloadedNumberUtil {
             this.w = w;
         }
 
+        @Override
         public byte byteValue() {
             return w;
         }
@@ -451,6 +462,7 @@ class OverloadedNumberUtil {
             this.w = w;
         }
 
+        @Override
         public short shortValue() {
             return w;
         }
@@ -466,6 +478,7 @@ class OverloadedNumberUtil {
             this.w = w;
         }
 
+        @Override
         public int intValue() {
             return w;
         }
@@ -480,10 +493,12 @@ class OverloadedNumberUtil {
             this.n = n;
         }
 
+        @Override
         protected Number getSourceNumber() {
             return n;
         }
 
+        @Override
         public int intValue() {
             return n.intValue();
         }
@@ -499,6 +514,7 @@ class OverloadedNumberUtil {
             this.w = w;
         }
 
+        @Override
         public byte byteValue() {
             return w;
         }
@@ -514,6 +530,7 @@ class OverloadedNumberUtil {
             this.w = w;
         }
 
+        @Override
         public short shortValue() {
             return w;
         }
@@ -530,14 +547,17 @@ class OverloadedNumberUtil {
             this.w = w;
         }
 
+        @Override
         protected Number getSourceNumber() {
             return n;
         }
 
+        @Override
         public short shortValue() {
             return n.shortValue();
         }
 
+        @Override
         public byte byteValue() {
             return w;
         }
@@ -552,10 +572,12 @@ class OverloadedNumberUtil {
             this.n = n;
         }
 
+        @Override
         protected Number getSourceNumber() {
             return n;
         }
         
+        @Override
         public double doubleValue() {
             return n.doubleValue();
         }
@@ -571,18 +593,22 @@ class OverloadedNumberUtil {
             this.w = w;
         }
         
+        @Override
         public byte byteValue() {
             return w;
         }
         
+        @Override
         public short shortValue() {
             return w;
         }
         
+        @Override
         public int intValue() {
             return w;
         }
         
+        @Override
         public long longValue() {
             return w;
         }
@@ -598,14 +624,17 @@ class OverloadedNumberUtil {
             this.w = w;
         }
         
+        @Override
         public short shortValue() {
             return w;
         }
         
+        @Override
         public int intValue() {
             return w;
         }
         
+        @Override
         public long longValue() {
             return w;
         }
@@ -621,10 +650,12 @@ class OverloadedNumberUtil {
             this.w = w;
         }
         
+        @Override
         public int intValue() {
             return w;
         }
         
+        @Override
         public long longValue() {
             return w;
         }
@@ -640,10 +671,12 @@ class OverloadedNumberUtil {
             this.w = w;
         }
         
+        @Override
         public int intValue() {
             return w;
         }
         
+        @Override
         public long longValue() {
             return w;
         }
@@ -659,6 +692,7 @@ class OverloadedNumberUtil {
             this.w = w;
         }
         
+        @Override
         public long longValue() {
             return w;
         }
@@ -673,14 +707,17 @@ class OverloadedNumberUtil {
             this.n = n;
         }
         
+        @Override
         public float floatValue() {
             return n.floatValue();
         }
         
+        @Override
         public double doubleValue() {
             return n.doubleValue();
         }
 
+        @Override
         protected Number getSourceNumber() {
             return n;
         }
@@ -695,10 +732,12 @@ class OverloadedNumberUtil {
             this.n = n;
         }
 
+        @Override
         protected Number getSourceNumber() {
             return n;
         }
         
+        @Override
         public float floatValue() {
             return n.floatValue();
         }
@@ -714,18 +753,22 @@ class OverloadedNumberUtil {
             this.w = w;
         }
         
+        @Override
         public byte byteValue() {
             return w;
         }
         
+        @Override
         public short shortValue() {
             return w;
         }
         
+        @Override
         public int intValue() {
             return w;
         }
         
+        @Override
         public long longValue() {
             return w;
         }
@@ -741,14 +784,17 @@ class OverloadedNumberUtil {
             this.w = w;
         }
         
+        @Override
         public short shortValue() {
             return w;
         }
         
+        @Override
         public int intValue() {
             return w;
         }
         
+        @Override
         public long longValue() {
             return w;
         }
@@ -764,10 +810,12 @@ class OverloadedNumberUtil {
             this.w = w;
         }
         
+        @Override
         public int intValue() {
             return w;
         }
         
+        @Override
         public long longValue() {
             return w;
         }
@@ -782,6 +830,7 @@ class OverloadedNumberUtil {
             this.n = n;
         }
 
+        @Override
         protected Number getSourceNumber() {
             return n;
         }
@@ -827,11 +876,13 @@ class OverloadedNumberUtil {
         }
 
         /** Faster version of {@link BigDecimal#floatValue()}, utilizes that the number known to fit into a long. */
+        @Override
         public float floatValue() {
             return n.longValue(); 
         }
         
         /** Faster version of {@link BigDecimal#doubleValue()}, utilizes that the number known to fit into a long. */
+        @Override
         public double doubleValue() {
             return n.longValue(); 
         }

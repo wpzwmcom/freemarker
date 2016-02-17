@@ -17,6 +17,7 @@
 package freemarker.core;
 
 import freemarker.template.SimpleNumber;
+import freemarker.template.TemplateException;
 import freemarker.template.TemplateModel;
 import freemarker.template.TemplateNumberModel;
 
@@ -32,12 +33,14 @@ final class NumberLiteral extends Expression implements TemplateNumberModel {
         this.value = value;
     }
     
+    @Override
     TemplateModel _eval(Environment env) {
         return new SimpleNumber(value);
     }
 
-    public String evalAndCoerceToString(Environment env) {
-        return env.formatNumber(value);
+    @Override
+    public String evalAndCoerceToString(Environment env) throws TemplateException {
+        return env.formatNumber(this, this);
     }
 
     public Number getAsNumber() {
@@ -48,31 +51,38 @@ final class NumberLiteral extends Expression implements TemplateNumberModel {
         return "the number: '" + value + "'";
     }
 
+    @Override
     public String getCanonicalForm() {
         return value.toString();
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return getCanonicalForm();
     }
     
+    @Override
     boolean isLiteral() {
         return true;
     }
 
+    @Override
     protected Expression deepCloneWithIdentifierReplaced_inner(
             String replacedIdentifier, Expression replacement, ReplacemenetState replacementState) {
         return new NumberLiteral(value);
     }
     
+    @Override
     int getParameterCount() {
         return 0;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         throw new IndexOutOfBoundsException();
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         throw new IndexOutOfBoundsException();
     }

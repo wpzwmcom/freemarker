@@ -17,8 +17,6 @@
 package freemarker.core;
 
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.LinkedList;
 
 import freemarker.template.TemplateException;
 
@@ -35,7 +33,7 @@ final class SwitchBlock extends TemplateElement {
      */
     SwitchBlock(Expression searched) {
         this.searched = searched;
-        nestedElements = new LinkedList();
+        setRegulatedChildBufferCapacity(4);
     }
 
     /**
@@ -45,17 +43,17 @@ final class SwitchBlock extends TemplateElement {
         if (cas.condition == null) {
             defaultCase = cas;
         }
-        nestedElements.add(cas);
+        addRegulatedChild(cas);
     }
 
+    @Override
     void accept(Environment env) 
-        throws TemplateException, IOException 
-    {
+        throws TemplateException, IOException {
         boolean processedCase = false;
-        Iterator iterator = nestedElements.iterator();
+        int ln = getRegulatedChildCount();
         try {
-            while (iterator.hasNext()) {
-                Case cas = (Case)iterator.next();
+            for (int i = 0; i < ln; i++) {
+                Case cas = (Case) getRegulatedChild(i);
                 boolean processCase = false;
 
                 // Fall through if a previous case tested true.
@@ -78,20 +76,21 @@ final class SwitchBlock extends TemplateElement {
             if (!processedCase && defaultCase != null) {
                 env.visitByHiddingParent(defaultCase);
             }
-        }
-        catch (BreakInstruction.Break br) {}
+        } catch (BreakInstruction.Break br) {}
     }
 
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         if (canonical) buf.append('<');
         buf.append(getNodeTypeSymbol());
         buf.append(' ');
         buf.append(searched.getCanonicalForm());
         if (canonical) {
             buf.append('>');
-            for (int i = 0; i<nestedElements.size(); i++) {
-                Case cas = (Case) nestedElements.get(i);
+            int ln = getRegulatedChildCount();
+            for (int i = 0; i < ln; i++) {
+                Case cas = (Case) getRegulatedChild(i);
                 buf.append(cas.getCanonicalForm());
             }
             buf.append("</").append(getNodeTypeSymbol()).append('>');
@@ -99,22 +98,31 @@ final class SwitchBlock extends TemplateElement {
         return buf.toString();
     }
 
+    @Override
     String getNodeTypeSymbol() {
         return "#switch";
     }
 
+    @Override
     int getParameterCount() {
         return 1;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         if (idx != 0) throw new IndexOutOfBoundsException();
         return searched;
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         if (idx != 0) throw new IndexOutOfBoundsException();
         return ParameterRole.VALUE;
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
     }
     
 }

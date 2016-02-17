@@ -22,16 +22,14 @@ import java.util.EventObject;
  * Event describing a suspension of an environment (ie because it hit a
  * breakpoint).
  */
-public class EnvironmentSuspendedEvent extends EventObject
-{
+public class EnvironmentSuspendedEvent extends EventObject {
     private static final long serialVersionUID = 1L;
 
     private final String name;
     private final int line;
     private final DebuggedEnvironment env;
 
-    public EnvironmentSuspendedEvent(Object source, String templateName, int line, DebuggedEnvironment env)
-    {
+    public EnvironmentSuspendedEvent(Object source, String templateName, int line, DebuggedEnvironment env) {
         super(source);
         this.name = templateName;
         this.line = line;
@@ -43,8 +41,7 @@ public class EnvironmentSuspendedEvent extends EventObject
      * was suspended
      * @return String the template name
      */
-    public String getName()
-    {
+    public String getName() {
         return this.name;
     }
 
@@ -53,8 +50,7 @@ public class EnvironmentSuspendedEvent extends EventObject
      * was suspended.
      * @return int the line number
      */
-    public int getLine()
-    {
+    public int getLine() {
         return line;
     }
 
@@ -62,8 +58,7 @@ public class EnvironmentSuspendedEvent extends EventObject
      * The environment that was suspended
      * @return DebuggedEnvironment
      */
-    public DebuggedEnvironment getEnvironment()
-    {
+    public DebuggedEnvironment getEnvironment() {
         return env;
     }
 }

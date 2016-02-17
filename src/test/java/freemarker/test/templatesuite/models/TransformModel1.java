@@ -40,17 +40,19 @@ public class TransformModel1 implements TemplateTransformModel {
     private static final int READER_BUFFER_SIZE = 4096;
 
     public Writer getWriter(final Writer out, 
-                            final Map args) 
-    {
+                            final Map args) {
         final StringBuilder buf = new StringBuilder();
         return new Writer(out) {
+            @Override
             public void write(char cbuf[], int off, int len) {
                 buf.append(cbuf, off, len);
             }
 
+            @Override
             public void flush() {
             }
 
+            @Override
             public void close() throws IOException {
                 StringReader sr = new StringReader(buf.toString());
                 StringWriter sw = new StringWriter();
@@ -104,8 +106,7 @@ public class TransformModel1 implements TemplateTransformModel {
      * @param output the destination of the transformation
      */
     public void transform(Reader source, Writer output)
-    throws IOException 
-    {
+    throws IOException {
         // Output the source, converting unsafe certain characters to their
         // equivalent entities.
         int n = 0;

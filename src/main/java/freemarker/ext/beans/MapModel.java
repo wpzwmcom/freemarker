@@ -43,14 +43,12 @@ public class MapModel
 extends
     StringModel
 implements
-    TemplateMethodModelEx
-{
+    TemplateMethodModelEx {
     static final ModelFactory FACTORY =
         new ModelFactory()
         {
-            public TemplateModel create(Object object, ObjectWrapper wrapper)
-            {
-                return new MapModel((Map)object, (BeansWrapper)wrapper);
+            public TemplateModel create(Object object, ObjectWrapper wrapper) {
+                return new MapModel((Map) object, (BeansWrapper) wrapper);
             }
         };
 
@@ -62,8 +60,7 @@ implements
      * model gains many attributes from its wrapper, including the caching 
      * behavior, method exposure level, method-over-item shadowing policy etc.
      */
-    public MapModel(Map map, BeansWrapper wrapper)
-    {
+    public MapModel(Map map, BeansWrapper wrapper) {
         super(map, wrapper);
     }
 
@@ -71,52 +68,49 @@ implements
      * The first argument is used as a key to call the map's <tt>get</tt> method.
      */
     public Object exec(List arguments)
-    throws
-        TemplateModelException
-    {
-        Object key = unwrap((TemplateModel)arguments.get(0));
-        return wrap(((Map)object).get(key));
+    throws TemplateModelException {
+        Object key = unwrap((TemplateModel) arguments.get(0));
+        return wrap(((Map) object).get(key));
     }
 
     /**
      * Overridden to invoke the generic get method by casting to Map instead of 
      * through reflection - should yield better performance.
      */
+    @Override
     protected TemplateModel invokeGenericGet(Map keyMap, Class clazz, String key)
-    throws TemplateModelException
-    {
+    throws TemplateModelException {
         Map map = (Map) object;
         Object val = map.get(key);
-        if(val == null) {
-            if(key.length() == 1) {
+        if (val == null) {
+            if (key.length() == 1) {
                 // just check for Character key if this is a single-character string
-                Character charKey = new Character(key.charAt(0));
+                Character charKey = Character.valueOf(key.charAt(0));
                 val = map.get(charKey);
                 if (val == null && !(map.containsKey(key) || map.containsKey(charKey))) {
                     return UNKNOWN;
                 }
-            }
-            else if(!map.containsKey(key)) {
+            } else if (!map.containsKey(key)) {
                 return UNKNOWN;
             }
         }
         return wrap(val);
     }
 
-    public boolean isEmpty()
-    {
-        return ((Map)object).isEmpty() && super.isEmpty();
+    @Override
+    public boolean isEmpty() {
+        return ((Map) object).isEmpty() && super.isEmpty();
     }
 
-    public int size()
-    {
+    @Override
+    public int size() {
         return keySet().size();
     }
 
-    protected Set keySet()
-    {
+    @Override
+    protected Set keySet() {
         Set set = super.keySet();
-        set.addAll(((Map)object).keySet());
+        set.addAll(((Map) object).keySet());
         return set;
     }
 }

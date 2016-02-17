@@ -22,38 +22,39 @@ import freemarker.debug.impl.DebuggerService;
 import freemarker.template.TemplateException;
 
 /**
+ * <b>Internal API - subject to change: A debug breakpoint inserted into the template</b> 
+ * 
+ * @deprecated This is an internal FreeMarker API with no backward compatibility guarantees, so you shouldn't depend on
+ *             it.
  */
-public class DebugBreak extends TemplateElement
-{
-    public DebugBreak(TemplateElement nestedBlock)
-    {
-        this.nestedBlock = nestedBlock;
-        nestedBlock.parent = this;
+@Deprecated
+public class DebugBreak extends TemplateElement {
+    public DebugBreak(TemplateElement nestedBlock) {
+        setNestedBlock(nestedBlock);
         copyLocationFrom(nestedBlock);
     }
     
-    protected void accept(Environment env) throws TemplateException, IOException
-    {
-        if(!DebuggerService.suspendEnvironment(env, this.getTemplate().getName(), nestedBlock.getBeginLine()))
-        {
-            nestedBlock.accept(env);
-        }
-        else
-        {
+    @Override
+    protected void accept(Environment env) throws TemplateException, IOException {
+        if (!DebuggerService.suspendEnvironment(
+                env, this.getTemplate().getSourceName(), getNestedBlock().getBeginLine())) {
+            getNestedBlock().accept(env);
+        } else {
             throw new StopException(env, "Stopped by debugger");        
         }
     }
 
+    @Override
     protected String dump(boolean canonical) {
         if (canonical) {
-            StringBuffer sb = new StringBuffer();
+            StringBuilder sb = new StringBuilder();
             sb.append("<#-- ");
             sb.append("debug break");
-            if (nestedBlock == null) {
+            if (getNestedBlock() == null) {
                 sb.append(" /-->");
             } else {
                 sb.append(" -->");
-                sb.append(nestedBlock.getCanonicalForm());                
+                sb.append(getNestedBlock().getCanonicalForm());                
                 sb.append("<#--/ debug break -->");
             }
             return sb.toString();
@@ -62,20 +63,29 @@ public class DebugBreak extends TemplateElement
         }
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return "#debug_break";
     }
 
+    @Override
     int getParameterCount() {
         return 0;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         throw new IndexOutOfBoundsException();
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         throw new IndexOutOfBoundsException();
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
     }
         
 }

@@ -38,7 +38,6 @@ import java.util.regex.PatternSyntaxException;
 import freemarker.template.Configuration;
 import freemarker.template.Template;
 import freemarker.template.TemplateModel;
-import freemarker.template.Version;
 import freemarker.template.utility.ClassUtil;
 import freemarker.template.utility.StringUtil;
 
@@ -96,9 +95,10 @@ public class ASTPrinter {
             System.exit(-1);
         }
         
-        File srcDir = new File(args[1]);
+        final String srcDirPath = args[1].trim();
+        File srcDir = new File(srcDirPath);
         if (!srcDir.isDirectory()) {
-            p(StringUtil.jQuote(args[1]) + " must be a directory");
+            p("This should be an existing directory: " + srcDirPath);
             System.exit(-1);
         }
         
@@ -111,19 +111,26 @@ public class ASTPrinter {
             return;
         }
         
-        File dstDir = new File(args[3]);
+        final String dstDirPath = args[3].trim();
+        File dstDir = new File(dstDirPath);
         if (!dstDir.isDirectory()) {
-            p(StringUtil.jQuote(args[3]) + " must be a directory");
+            p("This should be an existing directory: " + dstDirPath);
             System.exit(-1);
         }
         
+        long startTime = System.currentTimeMillis();
         recurse(srcDir, fnPattern, dstDir);
+        long endTime = System.currentTimeMillis();
         
-        p("Successfully processed " + successfulCounter + ", failed  " + failedCounter + ".");
+        p("Templates successfully processed " + successfulCounter + ", failed " + failedCounter
+                + ". Time taken: " + (endTime - startTime) / 1000.0 + " s");
     }
     
     private void recurse(File srcDir, Pattern fnPattern, File dstDir) throws IOException {
         File[] files = srcDir.listFiles();
+        if (files == null) {
+            throw new IOException("Failed to kust directory: " + srcDir);
+        }
         for (File file : files) {
             if (file.isDirectory()) {
                 recurse(file, fnPattern, new File(dstDir, file.getName()));
@@ -231,11 +238,51 @@ public class ASTPrinter {
     }
 
     public static String getASTAsString(Template t, Options opts) throws IOException {
+        validateAST(t);
+        
         StringWriter out = new StringWriter();
         printNode(t.getRootTreeNode(), "", null, opts != null ? opts : Options.DEFAULT_INSTANCE, out);
         return out.toString();
     }
     
+    public static void validateAST(Template t) throws InvalidASTException {
+        final TemplateElement node = t.getRootTreeNode();
+        if (node.getParentElement() != null) {
+            throw new InvalidASTException("Root node parent must be null."
+                    + "\nRoot node: " + node.dump(false)
+                    + "\nParent"
+                    + ": " + node.getParentElement().getClass() + ", " + node.getParentElement().dump(false));
+        }
+        validateAST(node);
+    }
+
+    private static void validateAST(TemplateElement te) {
+        int ln = te.getRegulatedChildCount();
+        for (int i = 0; i < ln; i++) {
+            TemplateElement child = te.getRegulatedChild(i);
+            if (child.getParentElement() != te) {
+                throw new InvalidASTException("Wrong parent node."
+                        + "\nNode: " + child.dump(false)
+                        + "\nExpected parent: " + te.dump(false)
+                        + "\nActual parent: " + child.getParentElement().dump(false));
+            }
+            if (child.getIndex() != i) {
+                throw new InvalidASTException("Wrong node index."
+                        + "\nNode: " + child.dump(false)
+                        + "\nExpected index: " + i
+                        + "\nActual index: " + child.getIndex());
+            }
+        }
+        if (te instanceof MixedContent && te.getRegulatedChildCount() < 2) {
+            throw new InvalidASTException("Mixed content with child count less than 2 should removed by optimizatoin, "
+                    + "but found one with " + te.getRegulatedChildCount() + " child(ren).");
+        }
+        if (te.getRegulatedChildCount() != 0 && te.getNestedBlock() != null) {
+            throw new InvalidASTException("Can't have both nestedBlock and regulatedChildren."
+                    + "\nNode: " + te.dump(false));
+        }
+    }
+
     private static void printNode(Object node, String ind, ParameterRole paramRole, Options opts, Writer out) throws IOException {
         if (node instanceof TemplateObject) {
             TemplateObject tObj = (TemplateObject) node;
@@ -344,4 +391,15 @@ public class ASTPrinter {
         System.out.println(obj);
     }
 
+    public static class InvalidASTException extends RuntimeException {
+
+        public InvalidASTException(String message, Throwable cause) {
+            super(message, cause);
+        }
+
+        public InvalidASTException(String message) {
+            super(message);
+        }
+        
+    }
 }

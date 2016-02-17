@@ -24,69 +24,71 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import freemarker.template.EmptyMap;
 import freemarker.template.TemplateDirectiveModel;
 import freemarker.template.TemplateException;
 import freemarker.template.TemplateModel;
 import freemarker.template.TemplateTransformModel;
+import freemarker.template.utility.ObjectFactory;
+import freemarker.template.utility.StringUtil;
 
 /**
  * An element for the unified macro/transform syntax. 
  */
-final class UnifiedCall extends TemplateElement {
+final class UnifiedCall extends TemplateElement implements DirectiveCallPlace {
 
     private Expression nameExp;
     private Map namedArgs;
     private List positionalArgs, bodyParameterNames;
     boolean legacySyntax;
     private transient volatile SoftReference/*List<Map.Entry<String,Expression>>*/ sortedNamedArgsCache;
+    private CustomDataHolder customDataHolder;
 
     UnifiedCall(Expression nameExp,
          Map namedArgs,
          TemplateElement nestedBlock,
-         List bodyParameterNames) 
-    {
+         List bodyParameterNames) {
         this.nameExp = nameExp;
         this.namedArgs = namedArgs;
-        this.nestedBlock = nestedBlock;
+        setNestedBlock(nestedBlock);
         this.bodyParameterNames = bodyParameterNames;
     }
 
     UnifiedCall(Expression nameExp,
          List positionalArgs,
          TemplateElement nestedBlock,
-         List bodyParameterNames) 
-    {
+         List bodyParameterNames) {
         this.nameExp = nameExp;
         this.positionalArgs = positionalArgs;
         if (nestedBlock == TextBlock.EMPTY_BLOCK) {
             nestedBlock = null;
         }
-        this.nestedBlock = nestedBlock;
+        setNestedBlock(nestedBlock);
         this.bodyParameterNames = bodyParameterNames;
     }
 
+    @Override
     void accept(Environment env) throws TemplateException, IOException {
         TemplateModel tm = nameExp.eval(env);
         if (tm == Macro.DO_NOTHING_MACRO) return; // shortcut here.
         if (tm instanceof Macro) {
             Macro macro = (Macro) tm;
-            if (macro.isFunction && !legacySyntax) {
-                throw new _MiscTemplateException(env, new Object[] {
+            if (macro.isFunction() && !legacySyntax) {
+                throw new _MiscTemplateException(env,
                         "Routine ", new _DelayedJQuote(macro.getName()), " is a function, not a directive. "
                         + "Functions can only be called from expressions, like in ${f()}, ${x + f()} or ",
-                        "<@someDirective someParam=f() />", "." });
+                        "<@someDirective someParam=f() />", ".");
             }    
-            env.visit(macro, namedArgs, positionalArgs, bodyParameterNames,
-                    nestedBlock);
-        }
-        else {
+            env.invoke(macro, namedArgs, positionalArgs, bodyParameterNames,
+                    getNestedBlock());
+        } else {
             boolean isDirectiveModel = tm instanceof TemplateDirectiveModel; 
             if (isDirectiveModel || tm instanceof TemplateTransformModel) {
                 Map args;
                 if (namedArgs != null && !namedArgs.isEmpty()) {
                     args = new HashMap();
-                    for (Iterator it = namedArgs.entrySet().iterator(); it.hasNext();) {
+                    for (Iterator it = namedArgs.entrySet().iterator(); it.hasNext(); ) {
                         Map.Entry entry = (Map.Entry) it.next();
                         String key = (String) entry.getKey();
                         Expression valueExp = (Expression) entry.getValue();
@@ -96,15 +98,12 @@ final class UnifiedCall extends TemplateElement {
                 } else {
                     args = EmptyMap.instance;
                 }
-                if(isDirectiveModel) {
-                    env.visit(nestedBlock, (TemplateDirectiveModel) tm, args, 
-                            bodyParameterNames);
+                if (isDirectiveModel) {
+                    env.visit(getNestedBlock(), (TemplateDirectiveModel) tm, args, bodyParameterNames);
+                } else { 
+                    env.visitAndTransform(getNestedBlock(), (TemplateTransformModel) tm, args);
                 }
-                else { 
-                    env.visitAndTransform(nestedBlock, (TemplateTransformModel) tm, args);
-                }
-            }
-            else if (tm == null) {
+            } else if (tm == null) {
                 throw InvalidReferenceException.getInstance(nameExp, env);
             } else {
                 throw new NonUserDefinedDirectiveLikeException(nameExp, tm, env);
@@ -112,14 +111,15 @@ final class UnifiedCall extends TemplateElement {
         }
     }
 
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         if (canonical) sb.append('<');
         sb.append('@');
         MessageUtil.appendExpressionAsUntearable(sb, nameExp);
         boolean nameIsInParen = sb.charAt(sb.length() - 1) == ')';
         if (positionalArgs != null) {
-            for (int i=0; i < positionalArgs.size(); i++) {
+            for (int i = 0; i < positionalArgs.size(); i++) {
                 Expression argExp = (Expression) positionalArgs.get(i);
                 if (i != 0) {
                     sb.append(',');
@@ -133,18 +133,26 @@ final class UnifiedCall extends TemplateElement {
                 Map.Entry entry = (Map.Entry) entries.get(i);
                 Expression argExp = (Expression) entry.getValue();
                 sb.append(' ');
-                sb.append(entry.getKey());
+                sb.append(_CoreStringUtils.toFTLTopLevelIdentifierReference((String) entry.getKey()));
                 sb.append('=');
                 MessageUtil.appendExpressionAsUntearable(sb, argExp);
             }
         }
+        if (bodyParameterNames != null && !bodyParameterNames.isEmpty()) {
+            sb.append("; ");
+            for (int i = 0; i < bodyParameterNames.size(); i++) {
+                if (i != 0) {
+                    sb.append(", ");
+                }
+                sb.append(_CoreStringUtils.toFTLTopLevelIdentifierReference((String) bodyParameterNames.get(i)));
+            }
+        }
         if (canonical) {
-            if (nestedBlock == null) {
+            if (getNestedBlock() == null) {
                 sb.append("/>");
-            } 
-            else {
+            } else {
                 sb.append('>');
-                sb.append(nestedBlock.getCanonicalForm());
+                sb.append(getNestedBlock().getCanonicalForm());
                 sb.append("</@");
                 if (!nameIsInParen
                         && (nameExp instanceof Identifier
@@ -157,10 +165,12 @@ final class UnifiedCall extends TemplateElement {
         return sb.toString();
     }
 
+    @Override
     String getNodeTypeSymbol() {
         return "@";
     }
 
+    @Override
     int getParameterCount() {
         return 1/*nameExp*/
                 + (positionalArgs != null ? positionalArgs.size() : 0)
@@ -168,6 +178,7 @@ final class UnifiedCall extends TemplateElement {
                 + (bodyParameterNames != null ? bodyParameterNames.size() : 0);
     }
 
+    @Override
     Object getParameterValue(int idx) {
         if (idx == 0) {
             return nameExp;
@@ -195,6 +206,7 @@ final class UnifiedCall extends TemplateElement {
         }
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         if (idx == 0) {
             return ParameterRole.CALLEE;
@@ -236,6 +248,60 @@ final class UnifiedCall extends TemplateElement {
         sortedNamedArgsCache = new SoftReference(res);
         return res;
     }
+
+    @SuppressFBWarnings(value={ "IS2_INCONSISTENT_SYNC", "DC_DOUBLECHECK" }, justification="Performance tricks")
+    public Object getOrCreateCustomData(Object providerIdentity, ObjectFactory objectFactory)
+            throws CallPlaceCustomDataInitializationException {
+        // We are using double-checked locking, utilizing Java memory model "final" trick.
+        // Note that this.customDataHolder is NOT volatile.
+        
+        CustomDataHolder customDataHolder = this.customDataHolder;  // Findbugs false alarm
+        if (customDataHolder == null) {  // Findbugs false alarm
+            synchronized (this) {
+                customDataHolder = this.customDataHolder;
+                if (customDataHolder == null || customDataHolder.providerIdentity != providerIdentity) {
+                    customDataHolder = createNewCustomData(providerIdentity, objectFactory);
+                    this.customDataHolder = customDataHolder; 
+                }
+            }
+        }
+        
+        if (customDataHolder.providerIdentity != providerIdentity) {
+            synchronized (this) {
+                customDataHolder = this.customDataHolder;
+                if (customDataHolder == null || customDataHolder.providerIdentity != providerIdentity) {
+                    customDataHolder = createNewCustomData(providerIdentity, objectFactory);
+                    this.customDataHolder = customDataHolder;
+                }
+            }
+        }
+        
+        return customDataHolder.customData;
+    }
+
+    private CustomDataHolder createNewCustomData(Object provierIdentity, ObjectFactory objectFactory)
+            throws CallPlaceCustomDataInitializationException {
+        CustomDataHolder customDataHolder;
+        Object customData;
+        try {
+            customData = objectFactory.createObject();
+        } catch (Exception e) {
+            throw new CallPlaceCustomDataInitializationException(
+                    "Failed to initialize custom data for provider identity "
+                    + StringUtil.tryToString(provierIdentity) + " via factory "
+                    + StringUtil.tryToString(objectFactory), e);
+        }
+        if (customData == null) {
+            throw new NullPointerException("ObjectFactory.createObject() has returned null");
+        }
+        customDataHolder = new CustomDataHolder(provierIdentity, customData);
+        return customDataHolder;
+    }
+
+    public boolean isNestedOutputCacheable() {
+        if (getNestedBlock() == null) return true;
+        return getNestedBlock().isOutputCacheable();
+    }
     
 /*
     //REVISIT
@@ -247,4 +313,25 @@ final class UnifiedCall extends TemplateElement {
     boolean heedsTrailingWhitespace() {
         return nestedBlock == null;
     }*/
+    
+    /**
+     * Used for implementing double check locking in implementing the
+     * {@link DirectiveCallPlace#getOrCreateCustomData(Object, ObjectFactory)}.
+     */
+    private static class CustomDataHolder {
+        
+        private final Object providerIdentity;
+        private final Object customData;
+        public CustomDataHolder(Object providerIdentity, Object customData) {
+            this.providerIdentity = providerIdentity;
+            this.customData = customData;
+        }
+        
+    }
+    
+    @Override
+    boolean isNestedBlockRepeater() {
+        return true;
+    }
+    
 }

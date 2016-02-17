@@ -30,22 +30,22 @@ final class Case extends TemplateElement {
     
     Expression condition;
 
-    Case(Expression matchingValue, TemplateElement nestedBlock) 
-    {
+    Case(Expression matchingValue, TemplateElement nestedBlock) {
         this.condition = matchingValue;
-        this.nestedBlock = nestedBlock;
+        setNestedBlock(nestedBlock);
     }
 
+    @Override
     void accept(Environment env) 
-        throws TemplateException, IOException 
-    {
-        if (nestedBlock != null) {
-            env.visitByHiddingParent(nestedBlock);
+        throws TemplateException, IOException {
+        if (getNestedBlock() != null) {
+            env.visitByHiddingParent(getNestedBlock());
         }
     }
 
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         if (canonical) sb.append('<');
         sb.append(getNodeTypeSymbol());
         if (condition != null) {
@@ -54,33 +54,42 @@ final class Case extends TemplateElement {
         }
         if (canonical) {
             sb.append('>');
-            if (nestedBlock != null) sb.append(nestedBlock.getCanonicalForm());
+            if (getNestedBlock() != null) sb.append(getNestedBlock().getCanonicalForm());
         }
         return sb.toString();
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return condition != null ? "#case" : "#default";
     }
 
+    @Override
     int getParameterCount() {
         return 2;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         switch (idx) {
         case 0: return condition;
-        case 1: return new Integer(condition != null ? TYPE_CASE : TYPE_DEFAULT);
+        case 1: return Integer.valueOf(condition != null ? TYPE_CASE : TYPE_DEFAULT);
         default: throw new IndexOutOfBoundsException();
         }
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         switch (idx) {
         case 0: return ParameterRole.CONDITION;
         case 1: return ParameterRole.AST_NODE_SUBTYPE;
         default: throw new IndexOutOfBoundsException();
         }
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
     }
         
 }

@@ -30,8 +30,7 @@ import freemarker.template.TemplateModelException;
  * A built-in that allows us to instantiate an instance of a java class.
  * Usage is something like: <tt>&lt;#assign foobar = "foo.bar.MyClass"?new()></tt>;
  */
-class NewBI extends BuiltIn
-{
+class NewBI extends BuiltIn {
     
     static final Class BEAN_MODEL_CLASS = freemarker.ext.beans.BeanModel.class;
     static Class JYTHON_MODEL_CLASS;
@@ -43,9 +42,9 @@ class NewBI extends BuiltIn
         }
     }
     
+    @Override
     TemplateModel _eval(Environment env)
-            throws TemplateException 
-    {
+            throws TemplateException {
         return new ConstructorFunction(target.evalAndCoerceToString(env), env, target.getTemplate());
     }
 
@@ -58,16 +57,16 @@ class NewBI extends BuiltIn
             this.env = env;
             cl = env.getNewBuiltinClassResolver().resolve(classname, env, template);
             if (!TemplateModel.class.isAssignableFrom(cl)) {
-                throw new _MiscTemplateException(NewBI.this, env, new Object[] {
-                        "Class ", cl.getName(), " does not implement freemarker.template.TemplateModel" });
+                throw new _MiscTemplateException(NewBI.this, env,
+                        "Class ", cl.getName(), " does not implement freemarker.template.TemplateModel");
             }
             if (BEAN_MODEL_CLASS.isAssignableFrom(cl)) {
-                throw new _MiscTemplateException(NewBI.this, env, new Object[] {
-                        "Bean Models cannot be instantiated using the ?", key, " built-in" });
+                throw new _MiscTemplateException(NewBI.this, env,
+                        "Bean Models cannot be instantiated using the ?", key, " built-in");
             }
             if (JYTHON_MODEL_CLASS != null && JYTHON_MODEL_CLASS.isAssignableFrom(cl)) {
-                throw new _MiscTemplateException(NewBI.this, env, new Object[] {
-                        "Jython Models cannot be instantiated using the ?", key, " built-in" });
+                throw new _MiscTemplateException(NewBI.this, env,
+                        "Jython Models cannot be instantiated using the ?", key, " built-in");
             }
         }
 
@@ -75,7 +74,7 @@ class NewBI extends BuiltIn
             ObjectWrapper ow = env.getObjectWrapper();
             BeansWrapper bw = 
                 ow instanceof BeansWrapper 
-                ? (BeansWrapper)ow
+                ? (BeansWrapper) ow
                 : BeansWrapper.getDefaultInstance();
             return bw.newInstance(cl, arguments);
         }

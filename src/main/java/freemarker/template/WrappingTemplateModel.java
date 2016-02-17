@@ -17,12 +17,13 @@
 package freemarker.template;
 
 /**
- * Convenience base-class for containers that wrap arbitrary Java objects into 
- * {@link TemplateModel} instances.
+ * Convenience base-class for containers that wrap their contained arbitrary Java objects into {@link TemplateModel}
+ * instances.
  */
 abstract public class WrappingTemplateModel {
 
     /** @deprecated Because it's a VM-wide modifiable field */
+    @Deprecated
     private static ObjectWrapper defaultObjectWrapper = DefaultObjectWrapper.instance;
     
     private ObjectWrapper objectWrapper;
@@ -39,6 +40,7 @@ abstract public class WrappingTemplateModel {
      * @deprecated This method has VM-wide effect, which makes it unsuitable for application where multiple components
      *      might use FreeMarker internally.
      */
+    @Deprecated
     public static void setDefaultObjectWrapper(ObjectWrapper objectWrapper) {
         defaultObjectWrapper = objectWrapper;
     }
@@ -53,6 +55,7 @@ abstract public class WrappingTemplateModel {
      * 
      * @deprecated Don't depend on this object, as it can be replace by anybody in the same JVM.
      */
+    @Deprecated
     public static ObjectWrapper getDefaultObjectWrapper() {
         return defaultObjectWrapper;
     }
@@ -63,6 +66,7 @@ abstract public class WrappingTemplateModel {
      * 
      * @deprecated Use {@link #WrappingTemplateModel(ObjectWrapper)} instead; this method uses the deprecated.
      */
+    @Deprecated
     protected WrappingTemplateModel() {
         this(defaultObjectWrapper);
     }

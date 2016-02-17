@@ -73,7 +73,7 @@ import freemarker.template.utility.SecurityUtilities;
  * templates using the <tt>models</tt> attribute.</li>
  * </ul>
  * <p>It supports the following attributes:</p>
- * <table style="width: auto; border-collapse: collapse" border="1">
+ * <table style="width: auto; border-collapse: collapse" border="1" summary="FreeMarker XML ant task attributes">
  *   <tr>
  *     <th valign="top" align="left">Attribute</th>
  *     <th valign="top" align="left">Description</th>
@@ -180,7 +180,7 @@ import freemarker.template.utility.SecurityUtilities;
  * 
  * <p>It supports the following nesed elements:</p>
  * 
- * <table style="width: auto; border-collapse: collapse" border="1">
+ * <table style="width: auto; border-collapse: collapse" border="1" summary="FreeMarker XML ant task nested elements">
  *   <tr>
  *     <th valign="top" align="left">Element</th>
  *     <th valign="top" align="left">Description</th>
@@ -225,10 +225,10 @@ import freemarker.template.utility.SecurityUtilities;
  * </table>
  * @deprecated <a href="http://fmpp.sourceforge.net">FMPP</a> is a more complete solution.
  */
+@Deprecated
 public class FreemarkerXmlTask
 extends
-    MatchingTask
-{
+    MatchingTask {
     private JythonAntTask prepareModel;
     private JythonAntTask prepareEnvironment;
     private final DocumentBuilderFactory builderFactory;
@@ -277,7 +277,7 @@ extends
     /** the default output extension is .html */
     private String extension = ".html";
 
-    private String encoding = SecurityUtilities.getSystemProperty("file.encoding");
+    private String encoding = SecurityUtilities.getSystemProperty("file.encoding", "utf-8");
     private String templateEncoding = encoding;
     private boolean validation = false;
 
@@ -289,8 +289,7 @@ extends
     /**
      * Constructor creates the SAXBuilder.
      */
-    public FreemarkerXmlTask()
-    {
+    public FreemarkerXmlTask() {
         builderFactory = DocumentBuilderFactory.newInstance();
         builderFactory.setNamespaceAware(true);
     }
@@ -298,8 +297,7 @@ extends
     /**
      * Set the base directory. Defaults to <tt>.</tt>
      */
-    public void setBasedir(File dir)
-    {
+    public void setBasedir(File dir) {
         baseDir = dir;
     }
 
@@ -308,16 +306,14 @@ extends
      * files should be copied to
      * @param dir the name of the destination directory
      */
-    public void setDestdir(File dir)
-    {
+    public void setDestdir(File dir) {
         destDir = dir;
     }
 
     /**
      * Set the output file extension. <tt>.html</tt> by default.
      */
-    public void setExtension(String extension)
-    {
+    public void setExtension(String extension) {
         this.extension = extension;
     }
 
@@ -337,56 +333,48 @@ extends
     /**
      * Set the path to the project XML file
      */
-    public void setProjectfile(String projectAttribute)
-    {
+    public void setProjectfile(String projectAttribute) {
         this.projectAttribute = projectAttribute;
     }
 
     /**
      * Turn on/off incremental processing. On by default
      */
-    public void setIncremental(String incremental)
-    {
+    public void setIncremental(String incremental) {
         this.incremental = !(incremental.equalsIgnoreCase("false") || incremental.equalsIgnoreCase("no") || incremental.equalsIgnoreCase("off"));
     }
 
     /**
      * Set encoding for generated files. Defaults to platform default encoding.
      */
-    public void setEncoding(String encoding)
-    {
+    public void setEncoding(String encoding) {
         this.encoding = encoding;
     }
 
-    public void setTemplateEncoding(String inputEncoding)
-    {
+    public void setTemplateEncoding(String inputEncoding) {
         this.templateEncoding = inputEncoding;
     }
     
     /**
      * Sets whether to validate the XML input.
      */
-    public void setValidation(boolean validation) 
-    {
+    public void setValidation(boolean validation) {
         this.validation = validation;
     }
 
-    public void setModels(String models)
-    {
+    public void setModels(String models) {
         this.models = models;
     }
     
-    public void execute() throws BuildException
-    {
+    @Override
+    public void execute() throws BuildException {
         DirectoryScanner scanner;
         String[]         list;
 
-        if (baseDir == null)
-        {
+        if (baseDir == null) {
             baseDir = getProject().getBaseDir();
         }
-        if (destDir == null )
-        {
+        if (destDir == null ) {
             String msg = "destdir attribute must be set!";
             throw new BuildException(msg, getLocation());
         }
@@ -401,8 +389,7 @@ extends
                 }
                 templateDir = templateFile.getParentFile();
                 templateName = templateFile.getName();
-            }
-            else {
+            } else {
                 templateDir = baseDir;
             }
             setTemplateDir(templateDir);
@@ -420,21 +407,18 @@ extends
             if (templateName != null) {
                 parsedTemplate = cfg.getTemplate(templateName, templateEncoding);
             }
-        }
-        catch (IOException ioe) {
+        } catch (IOException ioe) {
             throw new BuildException(ioe.toString());
         }
         // get the last modification of the template
         log("Transforming into: " + destDir.getAbsolutePath(), Project.MSG_INFO);
 
         // projectFile relative to baseDir
-        if (projectAttribute != null && projectAttribute.length() > 0)
-        {
+        if (projectAttribute != null && projectAttribute.length() > 0) {
             projectFile = new File(baseDir, projectAttribute);
             if (projectFile.isFile())
                 projectFileLastModified = projectFile.lastModified();
-            else
-            {
+            else {
                 log ("Project file is defined, but could not be located: " +
                      projectFile.getAbsolutePath(), Project.MSG_INFO );
                 projectFile = null;
@@ -450,12 +434,9 @@ extends
         userPropertiesTemplate = wrapMap(project.getUserProperties());
 
         builderFactory.setValidating(validation);
-        try
-        {
+        try {
             builder = builderFactory.newDocumentBuilder();
-        }
-        catch(ParserConfigurationException e)
-        {
+        } catch (ParserConfigurationException e) {
             throw new BuildException("Could not create document builder", e, getLocation());
         }
 
@@ -463,8 +444,7 @@ extends
         list = scanner.getIncludedFiles();
         
         
-        for (int i = 0;i < list.length; ++i)
-        {
+        for (int i = 0; i < list.length; ++i) {
             process(baseDir, list[i], destDir);
         }
     }
@@ -485,12 +465,10 @@ extends
      * Process an XML file using FreeMarker
      */
     private void process(File baseDir, String xmlFile, File destDir)
-    throws BuildException
-    {
-        File outFile=null;
-        File inFile=null;
-        try
-        {
+    throws BuildException {
+        File outFile = null;
+        File inFile = null;
+        try {
             // the current input file relative to the baseDir
             inFile = new File(baseDir,xmlFile);
             // the output file relative to basedir
@@ -502,8 +480,7 @@ extends
             if (!incremental ||
                 (inFile.lastModified() > outFile.lastModified() ||
                  templateFileLastModified > outFile.lastModified() ||
-                 projectFileLastModified > outFile.lastModified()))
-            {
+                 projectFileLastModified > outFile.lastModified())) {
                 ensureDirectoryFor(outFile);
 
                 //-- command line status
@@ -527,8 +504,7 @@ extends
                 // Process the template and write out
                 // the result as the outFile.
                 Writer writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outFile), encoding));
-                try
-                {
+                try {
                     if (parsedTemplate == null) {
                         throw new BuildException("No template file specified in build script or in XML file");
                     }
@@ -554,18 +530,14 @@ extends
                     }
                     env.process();
                     writer.flush();
-                }
-                finally
-                {
+                } finally {
                     writer.close();
                 }
 
                 log("Output: " + outFile, Project.MSG_INFO );
                 
             }
-        }
-        catch (SAXParseException spe)
-        {
+        } catch (SAXParseException spe) {
             Throwable rootCause = spe;
             if (spe.getException() != null)
                 rootCause = spe.getException();
@@ -573,11 +545,9 @@ extends
             log("Line number " + spe.getLineNumber());
             log("Column number " + spe.getColumnNumber());
             throw new BuildException(rootCause, getLocation());
-        }
-        catch (Throwable e)
-        {
+        } catch (Throwable e) {
             if (outFile != null ) {
-                if(!outFile.delete() && outFile.exists()) {
+                if (!outFile.delete() && outFile.exists()) {
                     log("Failed to delete " + outFile, Project.MSG_WARN);
                 }
             }
@@ -586,42 +556,31 @@ extends
         }
     }
 
-    private void generateModels()
-    {
+    private void generateModels() {
         StringTokenizer modelTokenizer = new StringTokenizer(models, ",; ");
-        while(modelTokenizer.hasMoreTokens())
-        {
+        while (modelTokenizer.hasMoreTokens()) {
             String modelSpec = modelTokenizer.nextToken();
             String name = null;
             String clazz = null;
             
             int sep = modelSpec.indexOf('=');
-            if(sep == -1)
-            {
+            if (sep == -1) {
                 // No explicit name - use unqualified class name
                 clazz = modelSpec;
                 int dot = clazz.lastIndexOf('.');
-                if(dot == -1)
-                {
+                if (dot == -1) {
                     // clazz in the default package
                     name = clazz;
-                }
-                else
-                {
+                } else {
                     name = clazz.substring(dot + 1);
                 }
-            }
-            else
-            {
+            } else {
                 name = modelSpec.substring(0, sep);
                 clazz = modelSpec.substring(sep + 1);
             }
-            try
-            {
+            try {
                 modelsMap.put(name, ClassUtil.forName(clazz).newInstance());
-            }
-            catch(Exception e)
-            {
+            } catch (Exception e) {
                 throw new BuildException(e);
             }
         }
@@ -630,42 +589,34 @@ extends
     /**
      * create directories as needed
      */
-    private void ensureDirectoryFor( File targetFile ) throws BuildException
-    {
+    private void ensureDirectoryFor( File targetFile ) throws BuildException {
         File directory = new File( targetFile.getParent() );
-        if (!directory.exists())
-        {
-            if (!directory.mkdirs())
-            {
+        if (!directory.exists()) {
+            if (!directory.mkdirs()) {
                 throw new BuildException("Unable to create directory: "
                                          + directory.getAbsolutePath(), getLocation());
             }
         }
     }
 
-    private static TemplateModel wrapMap(Map table)
-    {
+    private static TemplateModel wrapMap(Map table) {
         SimpleHash model = new SimpleHash();
-        for (Iterator it = table.entrySet().iterator(); it.hasNext();)
-        {
-            Map.Entry entry = (Map.Entry)it.next();
+        for (Iterator it = table.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry entry = (Map.Entry) it.next();
             model.put(String.valueOf(entry.getKey()), new SimpleScalar(String.valueOf(entry.getValue())));
         }
         return model;
     }
 
-    protected void insertDefaults(Map root) 
-    {
+    protected void insertDefaults(Map root) {
         root.put("properties", propertiesTemplate);
         root.put("userProperties", userPropertiesTemplate);
         if (projectTemplate != null) {
             root.put("project", projectTemplate);
             root.put("project_node", projectNode);
         }
-        if(modelsMap.size() > 0)
-        {
-            for (Iterator it = modelsMap.entrySet().iterator(); it.hasNext();)
-            {
+        if (modelsMap.size() > 0) {
+            for (Iterator it = modelsMap.entrySet().iterator(); it.hasNext(); ) {
                 Map.Entry entry = (Map.Entry) it.next();
                 root.put(entry.getKey(), entry.getValue());
             }

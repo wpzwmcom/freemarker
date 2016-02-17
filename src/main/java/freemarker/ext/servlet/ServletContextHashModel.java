@@ -27,15 +27,13 @@ import freemarker.template.TemplateModelException;
 /**
  * TemplateHashModel wrapper for a ServletContext attributes.
  */
-public final class ServletContextHashModel implements TemplateHashModel
-{
+public final class ServletContextHashModel implements TemplateHashModel {
     private final GenericServlet servlet;
     private final ServletContext servletctx;
     private final ObjectWrapper wrapper;
 
     public ServletContextHashModel(
-        GenericServlet servlet, ObjectWrapper wrapper)
-    {
+        GenericServlet servlet, ObjectWrapper wrapper) {
         this.servlet = servlet;
         this.servletctx = servlet.getServletContext();
         this.wrapper = wrapper;
@@ -45,21 +43,19 @@ public final class ServletContextHashModel implements TemplateHashModel
      * @deprecated use 
      * {@link #ServletContextHashModel(GenericServlet, ObjectWrapper)} instead.
      */
+    @Deprecated
     public ServletContextHashModel(
-        ServletContext servletctx, ObjectWrapper wrapper)
-    {
+        ServletContext servletctx, ObjectWrapper wrapper) {
         this.servlet = null;
         this.servletctx = servletctx;
         this.wrapper = wrapper;
     }
 
-    public TemplateModel get(String key) throws TemplateModelException
-    {
+    public TemplateModel get(String key) throws TemplateModelException {
         return wrapper.wrap(servletctx.getAttribute(key));
     }
 
-    public boolean isEmpty()
-    {
+    public boolean isEmpty() {
         return !servletctx.getAttributeNames().hasMoreElements();
     }
     
@@ -67,8 +63,7 @@ public final class ServletContextHashModel implements TemplateHashModel
      * Returns the underlying servlet. Can return null if this object was
      * created using the deprecated constructor.
      */
-    public GenericServlet getServlet()
-    {
+    public GenericServlet getServlet() {
         return servlet;
     }
 }

@@ -39,9 +39,10 @@ final class ListLiteral extends Expression {
         items.trimToSize();
     }
 
+    @Override
     TemplateModel _eval(Environment env) throws TemplateException {
         SimpleSequence list = new SimpleSequence(items.size());
-        for (Iterator it = items.iterator(); it.hasNext();) {
+        for (Iterator it = items.iterator(); it.hasNext(); ) {
             Expression exp = (Expression) it.next();
             TemplateModel tm = exp.eval(env);
             if (env == null || !env.isClassicCompatible()) {            
@@ -63,12 +64,12 @@ final class ListLiteral extends Expression {
                 return Collections.EMPTY_LIST;
             }
             case 1: {
-                return Collections.singletonList(((Expression)items.get(0)).evalAndCoerceToString(env));
+                return Collections.singletonList(((Expression) items.get(0)).evalAndCoerceToString(env));
             }
             default: {
                 List result = new ArrayList(items.size());
-                for (ListIterator iterator = items.listIterator(); iterator.hasNext();) {
-                    Expression exp = (Expression)iterator.next();
+                for (ListIterator iterator = items.listIterator(); iterator.hasNext(); ) {
+                    Expression exp = (Expression) iterator.next();
                     result.add(exp.evalAndCoerceToString(env));
                 }
                 return result;
@@ -86,12 +87,12 @@ final class ListLiteral extends Expression {
                 return Collections.EMPTY_LIST;
             }
             case 1: {
-                return Collections.singletonList(((Expression)items.get(0)).eval(env));
+                return Collections.singletonList(((Expression) items.get(0)).eval(env));
             }
             default: {
                 List result = new ArrayList(items.size());
-                for (ListIterator iterator = items.listIterator(); iterator.hasNext();) {
-                    Expression exp = (Expression)iterator.next();
+                for (ListIterator iterator = items.listIterator(); iterator.hasNext(); ) {
+                    Expression exp = (Expression) iterator.next();
                     result.add(exp.eval(env));
                 }
                 return result;
@@ -99,13 +100,14 @@ final class ListLiteral extends Expression {
         }
     }
 
+    @Override
     public String getCanonicalForm() {
-        StringBuffer buf = new StringBuffer("[");
+        StringBuilder buf = new StringBuilder("[");
         int size = items.size();
-        for (int i = 0; i<size; i++) {
+        for (int i = 0; i < size; i++) {
             Expression value = (Expression) items.get(i);
             buf.append(value.getCanonicalForm());
-            if (i != size-1) {
+            if (i != size - 1) {
                 buf.append(", ");
             }
         }
@@ -113,15 +115,17 @@ final class ListLiteral extends Expression {
         return buf.toString();
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return "[...]";
     }
     
+    @Override
     boolean isLiteral() {
         if (constantValue != null) {
             return true;
         }
-        for (int i = 0; i<items.size(); i++) {
+        for (int i = 0; i < items.size(); i++) {
             Expression exp = (Expression) items.get(i);
             if (!exp.isLiteral()) {
                 return false;
@@ -135,46 +139,48 @@ final class ListLiteral extends Expression {
     TemplateSequenceModel evaluateStringsToNamespaces(Environment env) throws TemplateException {
         TemplateSequenceModel val = (TemplateSequenceModel) eval(env);
         SimpleSequence result = new SimpleSequence(val.size());
-        for (int i=0; i<items.size(); i++) {
+        for (int i = 0; i < items.size(); i++) {
             Object itemExpr = items.get(i);
             if (itemExpr instanceof StringLiteral) {
                 String s = ((StringLiteral) itemExpr).getAsString();
                 try {
                     Environment.Namespace ns = env.importLib(s, null);
                     result.add(ns);
-                } 
-                catch (IOException ioe) {
-                    throw new _MiscTemplateException(((StringLiteral) itemExpr), new Object[] {
+                } catch (IOException ioe) {
+                    throw new _MiscTemplateException(((StringLiteral) itemExpr),
                             "Couldn't import library ", new _DelayedJQuote(s), ": ",
-                            new _DelayedGetMessage(ioe) });
+                            new _DelayedGetMessage(ioe));
                 }
-            }
-            else {
+            } else {
                 result.add(val.get(i));
             }
         }
         return result;
     }
     
+    @Override
     protected Expression deepCloneWithIdentifierReplaced_inner(
             String replacedIdentifier, Expression replacement, ReplacemenetState replacementState) {
-		ArrayList clonedValues = (ArrayList)items.clone();
-		for (ListIterator iter = clonedValues.listIterator(); iter.hasNext();) {
-            iter.set(((Expression)iter.next()).deepCloneWithIdentifierReplaced(
+		ArrayList clonedValues = (ArrayList) items.clone();
+		for (ListIterator iter = clonedValues.listIterator(); iter.hasNext(); ) {
+            iter.set(((Expression) iter.next()).deepCloneWithIdentifierReplaced(
                     replacedIdentifier, replacement, replacementState));
         }
         return new ListLiteral(clonedValues);
     }
 
+    @Override
     int getParameterCount() {
         return items != null ? items.size() : 0;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         checkIndex(idx);
         return items.get(idx);
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         checkIndex(idx);
         return ParameterRole.ITEM_VALUE;

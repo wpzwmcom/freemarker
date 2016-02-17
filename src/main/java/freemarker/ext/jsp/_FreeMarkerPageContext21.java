@@ -30,6 +30,7 @@ import javax.servlet.jsp.el.VariableResolver;
 
 import freemarker.log.Logger;
 import freemarker.template.TemplateModelException;
+import freemarker.template.utility.ClassUtil;
 
 /**
  * Don't use this class; it's only public to work around Google App Engine Java
@@ -39,13 +40,13 @@ import freemarker.template.TemplateModelException;
  * methods.
  */
 public class _FreeMarkerPageContext21 extends FreeMarkerPageContext {
-    private static final Logger logger = Logger.getLogger("freemarker.jsp");
+    private static final Logger LOG = Logger.getLogger("freemarker.jsp");
 
     static {
-        if(JspFactory.getDefaultFactory() == null) {
+        if (JspFactory.getDefaultFactory() == null) {
             JspFactory.setDefaultFactory(new FreeMarkerJspFactory21());
         }
-        logger.debug("Using JspFactory implementation class " + 
+        LOG.debug("Using JspFactory implementation class " + 
                 JspFactory.getDefaultFactory().getClass().getName());
     }
 
@@ -58,9 +59,10 @@ public class _FreeMarkerPageContext21 extends FreeMarkerPageContext {
      * to work you <b>must</b> have the Apache Commons-EL package in the classpath. If
      * Commons-EL is not available, this method will throw an UnsupportedOperationException. 
      */
+    @Override
     public ExpressionEvaluator getExpressionEvaluator() {
         try {
-            Class type = ((ClassLoader)AccessController.doPrivileged(
+            Class type = ((ClassLoader) AccessController.doPrivileged(
                     new PrivilegedAction() {
                         public Object run() {
                             return Thread.currentThread().getContextClassLoader();
@@ -68,8 +70,7 @@ public class _FreeMarkerPageContext21 extends FreeMarkerPageContext {
                     })).loadClass
                     ("org.apache.commons.el.ExpressionEvaluatorImpl");
             return (ExpressionEvaluator) type.newInstance();
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             throw new UnsupportedOperationException("In order for the getExpressionEvaluator() " +
                 "method to work, you must have downloaded the apache commons-el jar and " +
                 "made it available in the classpath.");
@@ -81,6 +82,7 @@ public class _FreeMarkerPageContext21 extends FreeMarkerPageContext {
      * the page scope, request scope, session scope and application scope for an
      * attribute with a matching name.
      */
+    @Override
     public VariableResolver getVariableResolver() {
         final PageContext ctx = this;
 
@@ -93,18 +95,20 @@ public class _FreeMarkerPageContext21 extends FreeMarkerPageContext {
 
     private ELContext elContext;
     
+    @Override
     public ELContext getELContext() {
-        if(elContext == null) { 
+        if (elContext == null) { 
             JspApplicationContext jspctx = JspFactory.getDefaultFactory().getJspApplicationContext(getServletContext());
-            if(jspctx instanceof FreeMarkerJspApplicationContext) {
-                elContext = ((FreeMarkerJspApplicationContext)jspctx).createNewELContext(this);
+            if (jspctx instanceof FreeMarkerJspApplicationContext) {
+                elContext = ((FreeMarkerJspApplicationContext) jspctx).createNewELContext(this);
                 elContext.putContext(JspContext.class, this);
-            }
-            else {
+            } else {
                 throw new UnsupportedOperationException(
-                        "Can not create an ELContext using a foreign JspApplicationContext\n" +
-                        "Consider dropping a private instance of JSP 2.1 API JAR file in\n" +
-                        "your WEB-INF/lib directory and then try again.");
+                        "Can not create an ELContext using a foreign JspApplicationContext (of class "
+                        + ClassUtil.getShortClassNameOfObject(jspctx) + ").\n" +
+                        "Hint: The cause of this is often that you are trying to use JSTL tags/functions in FTL. "
+                        + "In that case, know that that's not really suppored, and you are supposed to use FTL "
+                        + "constrcuts instead, like #list instead of JSTL's forEach, etc.");
             }
         }
         return elContext;

@@ -31,9 +31,12 @@ import freemarker.template.TemplateScalarModel;
 import freemarker.template.TemplateSequenceModel;
 
 /**
- * An abstract class for nodes in the parse tree 
- * that represent a FreeMarker expression.
+ * <b>Internal API - subject to change:</b> Represent expression nodes in the parsed template.
+ * 
+ * @deprecated This is an internal FreeMarker API with no backward compatibility guarantees, so you shouldn't depend on
+ *             it.
  */
+@Deprecated
 abstract public class Expression extends TemplateObject {
 
     /**
@@ -51,10 +54,9 @@ abstract public class Expression extends TemplateObject {
 
     // Hook in here to set the constant value if possible.
     
+    @Override
     void setLocation(Template template, int beginColumn, int beginLine, int endColumn, int endLine)
-    throws
-        ParseException
-    {
+    throws ParseException {
         super.setLocation(template, beginColumn, beginLine, endColumn, endLine);
         if (isLiteral()) {
             try {
@@ -68,6 +70,7 @@ abstract public class Expression extends TemplateObject {
     /**
      * @deprecated At the moment FreeMarker has no API for this with backward-compatibility promises.
      */
+    @Deprecated
     public final TemplateModel getAsTemplateModel(Environment env) throws TemplateException {
         return eval(env);
     }
@@ -97,7 +100,7 @@ abstract public class Expression extends TemplateObject {
     }
 
     Number modelToNumber(TemplateModel model, Environment env) throws TemplateException {
-        if(model instanceof TemplateNumberModel) {
+        if (model instanceof TemplateNumberModel) {
             return EvalUtil.modelToNumber((TemplateNumberModel) model, this);
         } else {
             throw new NonNumericalException(this, model, env);
@@ -110,6 +113,12 @@ abstract public class Expression extends TemplateObject {
 
     boolean evalToBoolean(Configuration cfg) throws TemplateException {
         return evalToBoolean(null, cfg);
+    }
+
+    TemplateModel evalToNonMissing(Environment env) throws TemplateException {
+        TemplateModel result = this.eval(env);
+        assertNonNull(result, env);
+        return result;
     }
     
     private boolean evalToBoolean(Environment env, Configuration cfg) throws TemplateException {
@@ -153,13 +162,12 @@ abstract public class Expression extends TemplateObject {
 
     /**
      * This should return an equivalent new expression object (or an identifier replacement expression).
-     * The position need not be filled, unless it will be different from the position of what were cloning. 
+     * The position need not be filled, unless it will be different from the position of what we were cloning. 
      */
     protected abstract Expression deepCloneWithIdentifierReplaced_inner(
             String replacedIdentifier, Expression replacement, ReplacemenetState replacementState);
 
-    static boolean isEmpty(TemplateModel model) throws TemplateModelException
-    {
+    static boolean isEmpty(TemplateModel model) throws TemplateModelException {
         if (model instanceof BeanModel) {
             return ((BeanModel) model).isEmpty();
         } else if (model instanceof TemplateSequenceModel) {
@@ -169,6 +177,9 @@ abstract public class Expression extends TemplateObject {
             return (s == null || s.length() == 0);
         } else if (model == null) {
             return true;
+        } else if (model instanceof TemplateMarkupOutputModel) { // Note: happens just after FTL string check
+            TemplateMarkupOutputModel mo = (TemplateMarkupOutputModel) model;
+            return mo.getOutputFormat().isEmpty(mo);
         } else if (model instanceof TemplateCollectionModel) {
             return !((TemplateCollectionModel) model).iterator().hasNext();
         } else if (model instanceof TemplateHashModel) {

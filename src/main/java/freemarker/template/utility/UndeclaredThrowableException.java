@@ -16,41 +16,21 @@
 
 package freemarker.template.utility;
 
-import java.io.PrintStream;
-import java.io.PrintWriter;
 
 /**
  * The equivalent of JDK 1.3 UndeclaredThrowableException.
  */
-public class UndeclaredThrowableException extends RuntimeException
-{
+public class UndeclaredThrowableException extends RuntimeException {
     
-    public UndeclaredThrowableException(Throwable t)
-    {
+    public UndeclaredThrowableException(Throwable t) {
         super(t);
     }
-    
-    public void printStackTrace()
-    {
-        printStackTrace(System.err);
-    }
 
-    public void printStackTrace(PrintStream ps)
-    {
-        synchronized (ps)
-        {
-            ps.print("Undeclared throwable:");
-            getCause().printStackTrace(ps);
-        }
-    }
-
-    public void printStackTrace(PrintWriter pw)
-    {
-        synchronized (pw)
-        {
-            pw.print("Undeclared throwable:");
-            getCause().printStackTrace(pw);
-        }
+    /**
+     * @since 2.3.22
+     */
+    public UndeclaredThrowableException(String message, Throwable t) {
+        super(message, t);
     }
     
     public Throwable getUndeclaredThrowable() {

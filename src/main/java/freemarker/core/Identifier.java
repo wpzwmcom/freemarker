@@ -30,55 +30,62 @@ final class Identifier extends Expression {
         this.name = name;
     }
 
+    @Override
     TemplateModel _eval(Environment env) throws TemplateException {
         try {
             return env.getVariable(name);
         } catch (NullPointerException e) {
             if (env == null) {
-                throw new _MiscTemplateException(new Object[] {
+                throw new _MiscTemplateException(
                         "Variables are not available (certainly you are in a parse-time executed directive). "
-                        + "The name of the variable you tried to read: ", name });
+                        + "The name of the variable you tried to read: ", name);
             } else {
                 throw e;
             }
         }
     }
 
-    public String toString() {
-        return name;
-    }
-
+    @Override
     public String getCanonicalForm() {
-        return name;
+        return _CoreStringUtils.toFTLTopLevelIdentifierReference(name);
     }
     
+    /**
+     * The name of the identifier without any escaping or other syntactical distortions. 
+     */
     String getName() {
         return name;
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return getCanonicalForm();
     }
 
+    @Override
     boolean isLiteral() {
         return false;
     }
     
+    @Override
     int getParameterCount() {
         return 0;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         throw new IndexOutOfBoundsException();
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         throw new IndexOutOfBoundsException();
     }
 
+    @Override
     protected Expression deepCloneWithIdentifierReplaced_inner(
             String replacedIdentifier, Expression replacement, ReplacemenetState replacementState) {
-        if(this.name.equals(replacedIdentifier)) {
+        if (this.name.equals(replacedIdentifier)) {
             if (replacementState.replacementAlreadyInUse) {
                 Expression clone = replacement.deepCloneWithIdentifierReplaced(null, null, replacementState);
                 clone.copyLocationFrom(replacement);

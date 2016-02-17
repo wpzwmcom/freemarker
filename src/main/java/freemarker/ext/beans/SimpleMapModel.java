@@ -30,7 +30,9 @@ import freemarker.template.TemplateHashModelEx;
 import freemarker.template.TemplateMethodModelEx;
 import freemarker.template.TemplateModel;
 import freemarker.template.TemplateModelException;
+import freemarker.template.TemplateModelWithAPISupport;
 import freemarker.template.WrappingTemplateModel;
+import freemarker.template.utility.RichObjectWrapper;
 
 /**
  * Model used by {@link BeansWrapper} when <tt>simpleMapWrapper</tt>
@@ -40,37 +42,33 @@ import freemarker.template.WrappingTemplateModel;
  */
 public class SimpleMapModel extends WrappingTemplateModel 
 implements TemplateHashModelEx, TemplateMethodModelEx, AdapterTemplateModel, 
-WrapperTemplateModel 
-{
+WrapperTemplateModel, TemplateModelWithAPISupport {
     static final ModelFactory FACTORY =
         new ModelFactory()
         {
-            public TemplateModel create(Object object, ObjectWrapper wrapper)
-            {
-                return new SimpleMapModel((Map)object, (BeansWrapper)wrapper);
+            public TemplateModel create(Object object, ObjectWrapper wrapper) {
+                return new SimpleMapModel((Map) object, (BeansWrapper) wrapper);
             }
         };
 
     private final Map map;
     
-    public SimpleMapModel(Map map, BeansWrapper wrapper)
-    {
+    public SimpleMapModel(Map map, BeansWrapper wrapper) {
         super(wrapper);
         this.map = map;
     }
 
     public TemplateModel get(String key) throws TemplateModelException {
         Object val = map.get(key);
-        if(val == null) {
-            if(key.length() == 1) {
+        if (val == null) {
+            if (key.length() == 1) {
                 // just check for Character key if this is a single-character string
-                Character charKey = new Character(key.charAt(0));
+                Character charKey = Character.valueOf(key.charAt(0));
                 val = map.get(charKey);
                 if (val == null && !(map.containsKey(key) || map.containsKey(charKey))) {
                     return null;
                 }
-            }
-            else if(!map.containsKey(key)) {
+            } else if (!map.containsKey(key)) {
                 return null;
             }
         }
@@ -78,7 +76,7 @@ WrapperTemplateModel
     }
     
     public Object exec(List args) throws TemplateModelException {
-        Object key = ((BeansWrapper)getObjectWrapper()).unwrap((TemplateModel)args.get(0));
+        Object key = ((BeansWrapper) getObjectWrapper()).unwrap((TemplateModel) args.get(0));
         Object value = map.get(key);
         if (value == null && !map.containsKey(key)) {
             return null;
@@ -108,5 +106,9 @@ WrapperTemplateModel
     
     public Object getWrappedObject() {
         return map;
+    }
+
+    public TemplateModel getAPI() throws TemplateModelException {
+        return ((RichObjectWrapper) getObjectWrapper()).wrapAsAPI(map);
     }
 }

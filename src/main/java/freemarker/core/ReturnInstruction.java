@@ -29,6 +29,7 @@ public final class ReturnInstruction extends TemplateElement {
         this.exp = exp;
     }
 
+    @Override
     void accept(Environment env) throws TemplateException {
         if (exp != null) {
             env.setLastReturnValue(exp.eval(env));
@@ -37,14 +38,15 @@ public final class ReturnInstruction extends TemplateElement {
             // We need to jump out using an exception.
             throw Return.INSTANCE;
         }
-        if (!(getParent() instanceof Macro || getParent().getParent() instanceof Macro)) {
+        if (!(getParentElement() instanceof Macro || getParentElement().getParentElement() instanceof Macro)) {
             // Here also, we need to jump out using an exception.
             throw Return.INSTANCE;
         }
     }
 
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         if (canonical) sb.append('<');
         sb.append(getNodeTypeSymbol());
         if (exp != null) {
@@ -55,6 +57,7 @@ public final class ReturnInstruction extends TemplateElement {
         return sb.toString();
     }
 
+    @Override
     String getNodeTypeSymbol() {
         return "#return";
     }
@@ -65,18 +68,26 @@ public final class ReturnInstruction extends TemplateElement {
         }
     }
     
+    @Override
     int getParameterCount() {
         return 1;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         if (idx != 0) throw new IndexOutOfBoundsException();
         return exp;
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         if (idx != 0) throw new IndexOutOfBoundsException();
         return ParameterRole.VALUE;
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
     }
     
 }

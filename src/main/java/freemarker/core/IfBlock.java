@@ -17,7 +17,6 @@
 package freemarker.core;
 
 import java.io.IOException;
-import java.util.ArrayList;
 
 import freemarker.template.TemplateException;
 
@@ -28,49 +27,51 @@ import freemarker.template.TemplateException;
  */
 final class IfBlock extends TemplateElement {
 
-    IfBlock(ConditionalBlock block)
-    {
-        nestedElements = new ArrayList();
+    IfBlock(ConditionalBlock block) {
+        setRegulatedChildBufferCapacity(1);
         addBlock(block);
     }
 
     void addBlock(ConditionalBlock block) {
-        nestedElements.add(block);
+        addRegulatedChild(block);
     }
 
+    @Override
     void accept(Environment env) throws TemplateException, IOException {
-        for (int i = 0; i<nestedElements.size(); i++) {
-            ConditionalBlock cblock = (ConditionalBlock) nestedElements.get(i);
+        int ln  = getRegulatedChildCount();
+        for (int i = 0; i < ln; i++) {
+            ConditionalBlock cblock = (ConditionalBlock) getRegulatedChild(i);
             Expression condition = cblock.condition;
-            env.replaceElemetStackTop(cblock);
+            env.replaceElementStackTop(cblock);
             if (condition == null || condition.evalToBoolean(env)) {
-                if (cblock.nestedBlock != null) {
-                    env.visitByHiddingParent(cblock.nestedBlock);
+                if (cblock.getNestedBlock() != null) {
+                    env.visitByHiddingParent(cblock.getNestedBlock());
                 }
                 return;
             }
         }
     }
 
+    @Override
     TemplateElement postParseCleanup(boolean stripWhitespace)
-        throws ParseException 
-    {
-        if (nestedElements.size() == 1) {
-            ConditionalBlock cblock = (ConditionalBlock) nestedElements.get(0);
+        throws ParseException {
+        if (getRegulatedChildCount() == 1) {
+            ConditionalBlock cblock = (ConditionalBlock) getRegulatedChild(0);
             cblock.isLonelyIf = true;
             cblock.setLocation(getTemplate(), cblock, this);
             return cblock.postParseCleanup(stripWhitespace);
-        }
-        else {
+        } else {
             return super.postParseCleanup(stripWhitespace);
         }
     }
     
+    @Override
     protected String dump(boolean canonical) {
         if (canonical) {
-            StringBuffer buf = new StringBuffer();
-            for (int i = 0; i < nestedElements.size(); i++) {
-                ConditionalBlock cblock = (ConditionalBlock) nestedElements.get(i);
+            StringBuilder buf = new StringBuilder();
+            int ln = getRegulatedChildCount();
+            for (int i = 0; i < ln; i++) {
+                ConditionalBlock cblock = (ConditionalBlock) getRegulatedChild(i);
                 buf.append(cblock.dump(canonical));
             }
             buf.append("</#if>");
@@ -80,23 +81,33 @@ final class IfBlock extends TemplateElement {
         }
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return "#if-#elseif-#else-container";
     }
     
+    @Override
     int getParameterCount() {
         return 0;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         throw new IndexOutOfBoundsException();
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         throw new IndexOutOfBoundsException();
     }
     
+    @Override
     boolean isShownInStackTrace() {
+        return false;
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
         return false;
     }
     

@@ -48,18 +48,18 @@ final class TransformBlock extends TemplateElement {
                    TemplateElement nestedBlock) {
         this.transformExpression = transformExpression;
         this.namedArgs = namedArgs;
-        this.nestedBlock = nestedBlock;
+        setNestedBlock(nestedBlock);
     }
 
+    @Override
     void accept(Environment env) 
-    throws TemplateException, IOException
-    {
+    throws TemplateException, IOException {
         TemplateTransformModel ttm = env.getTransform(transformExpression);
         if (ttm != null) {
             Map args;
             if (namedArgs != null && !namedArgs.isEmpty()) {
                 args = new HashMap();
-                for (Iterator it = namedArgs.entrySet().iterator(); it.hasNext();) {
+                for (Iterator it = namedArgs.entrySet().iterator(); it.hasNext(); ) {
                     Map.Entry entry = (Map.Entry) it.next();
                     String key = (String) entry.getKey();
                     Expression valueExp = (Expression) entry.getValue();
@@ -69,9 +69,8 @@ final class TransformBlock extends TemplateElement {
             } else {
                 args = EmptyMap.instance;
             }
-            env.visitAndTransform(nestedBlock, ttm, args);
-        }
-        else {
+            env.visitAndTransform(getNestedBlock(), ttm, args);
+        } else {
             TemplateModel tm = transformExpression.eval(env);
             throw new UnexpectedTypeException(
                     transformExpression, tm,
@@ -79,14 +78,15 @@ final class TransformBlock extends TemplateElement {
         }
     }
 
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         if (canonical) sb.append('<');
         sb.append(getNodeTypeSymbol());
         sb.append(' ');
         sb.append(transformExpression);
         if (namedArgs != null) {
-            for (Iterator it = getSortedNamedArgs().iterator(); it.hasNext();) {
+            for (Iterator it = getSortedNamedArgs().iterator(); it.hasNext(); ) {
                 Map.Entry entry = (Map.Entry) it.next();
                 sb.append(' ');
                 sb.append(entry.getKey());
@@ -96,22 +96,25 @@ final class TransformBlock extends TemplateElement {
         }
         if (canonical) {
             sb.append(">");
-            if (nestedBlock != null) {
-                sb.append(nestedBlock.getCanonicalForm());
+            if (getNestedBlock() != null) {
+                sb.append(getNestedBlock().getCanonicalForm());
             }
             sb.append("</").append(getNodeTypeSymbol()).append('>');
         }
         return sb.toString();
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return "#transform";
     }
     
+    @Override
     int getParameterCount() {
         return 1/*nameExp*/ + (namedArgs != null ? namedArgs.size() * 2 : 0);
     }
 
+    @Override
     Object getParameterValue(int idx) {
         if (idx == 0) {
             return transformExpression;
@@ -123,6 +126,7 @@ final class TransformBlock extends TemplateElement {
         }
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         if (idx == 0) {
             return ParameterRole.CALLEE;
@@ -147,6 +151,11 @@ final class TransformBlock extends TemplateElement {
         List res = MiscUtil.sortMapOfExpressions(namedArgs);
         sortedNamedArgsCache = new SoftReference(res);
         return res;
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
     }
     
 }

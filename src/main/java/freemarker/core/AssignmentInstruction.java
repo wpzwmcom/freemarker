@@ -17,7 +17,6 @@
 package freemarker.core;
 
 import java.io.IOException;
-import java.util.ArrayList;
 
 import freemarker.template.TemplateException;
 
@@ -33,39 +32,44 @@ final class AssignmentInstruction extends TemplateElement {
 
     AssignmentInstruction(int scope) {
         this.scope = scope;
-        nestedElements = new ArrayList(1);
+        setRegulatedChildBufferCapacity(1);
     }
 
-    void addAssignment(Assignment ass) {
-        nestedElements.add(ass);
+    void addAssignment(Assignment assignment) {
+        addRegulatedChild(assignment);
     }
     
     void setNamespaceExp(Expression namespaceExp) {
         this.namespaceExp = namespaceExp;
-        for (int i=0; i<nestedElements.size();i++) {
-            ((Assignment) nestedElements.get(i)).setNamespaceExp(namespaceExp);
+        int ln = getRegulatedChildCount();
+        for (int i = 0; i < ln; i++) {
+            ((Assignment) getRegulatedChild(i)).setNamespaceExp(namespaceExp);
         }
     }
 
+    @Override
     void accept(Environment env) throws TemplateException, IOException {
-        for (int i = 0; i<nestedElements.size(); i++) {
-            Assignment ass = (Assignment) nestedElements.get(i);
-            env.visit(ass);
+        int ln = getRegulatedChildCount();
+        for (int i = 0; i < ln; i++) {
+            Assignment assignment = (Assignment) getRegulatedChild(i);
+            env.visit(assignment);
         }
     }
 
+    @Override
     protected String dump(boolean canonical) {
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         if (canonical) buf.append('<');
         buf.append(Assignment.getDirectiveName(scope));
         if (canonical) {
             buf.append(' ');
-            for (int i = 0; i<nestedElements.size(); i++) {
-                Assignment ass = (Assignment) nestedElements.get(i);
-                buf.append(ass.getCanonicalForm());
-                if (i < nestedElements.size() -1) {
-                    buf.append(" ");
+            int ln = getRegulatedChildCount();
+            for (int i = 0; i < ln; i++) {
+                if (i != 0) {
+                    buf.append(", ");
                 }
+                Assignment assignment = (Assignment) getRegulatedChild(i);
+                buf.append(assignment.getCanonicalForm());
             }
         } else {
             buf.append("-container");
@@ -74,22 +78,25 @@ final class AssignmentInstruction extends TemplateElement {
             buf.append(" in ");
             buf.append(namespaceExp.getCanonicalForm());
         }
-        if (canonical) buf.append("/>");
+        if (canonical) buf.append(">");
         return buf.toString();
     }
     
+    @Override
     int getParameterCount() {
         return 2;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         switch (idx) {
-        case 0: return new Integer(scope);
+        case 0: return Integer.valueOf(scope);
         case 1: return namespaceExp;
         default: return null;
         }
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         switch (idx) {
         case 0: return ParameterRole.VARIABLE_SCOPE;
@@ -98,17 +105,20 @@ final class AssignmentInstruction extends TemplateElement {
         }
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return Assignment.getDirectiveName(scope);
     }
 
+    @Override
     public TemplateElement postParseCleanup(boolean stripWhitespace) throws ParseException {
         super.postParseCleanup(stripWhitespace);
-        if (nestedElements.size() == 1) {
-            Assignment ass = (Assignment) nestedElements.get(0);
-            ass.setLocation(getTemplate(), this, this);
-            return ass;
-        } 
         return this;
     }
+
+    @Override
+    boolean isNestedBlockRepeater() {
+        return false;
+    }
+    
 }

@@ -51,8 +51,7 @@ import java.util.Map;
  *
  * @see freemarker.template.Configuration#setCacheStorage(CacheStorage)
  */
-public class MruCacheStorage implements CacheStorageWithGetSize
-{
+public class MruCacheStorage implements CacheStorageWithGetSize {
     private final MruEntry strongHead = new MruEntry();
     private final MruEntry softHead = new MruEntry();
     {
@@ -60,48 +59,49 @@ public class MruCacheStorage implements CacheStorageWithGetSize
     }
     private final Map map = new HashMap();
     private final ReferenceQueue refQueue = new ReferenceQueue();
-    private final int maxStrongSize;
-    private final int maxSoftSize;
+    private final int strongSizeLimit;
+    private final int softSizeLimit;
     private int strongSize = 0;
     private int softSize = 0;
     
     /**
      * Creates a new MRU cache storage with specified maximum cache sizes. Each
      * cache size can vary between 0 and {@link Integer#MAX_VALUE}.
-     * @param maxStrongSize the maximum number of strongly referenced templates
-     * @param maxSoftSize the maximum number of softly referenced templates
+     * @param strongSizeLimit the maximum number of strongly referenced templates; when exceeded, the entry used
+     *          the least recently will be moved into the soft cache.
+     * @param softSizeLimit the maximum number of softly referenced templates; when exceeded, the entry used
+     *          the least recently will be discarded.
      */
-    public MruCacheStorage(int maxStrongSize, int maxSoftSize) {
-        if(maxStrongSize < 0) throw new IllegalArgumentException("maxStrongSize < 0");
-        if(maxSoftSize < 0) throw new IllegalArgumentException("maxSoftSize < 0");
-        this.maxStrongSize = maxStrongSize;
-        this.maxSoftSize = maxSoftSize;
+    public MruCacheStorage(int strongSizeLimit, int softSizeLimit) {
+        if (strongSizeLimit < 0) throw new IllegalArgumentException("strongSizeLimit < 0");
+        if (softSizeLimit < 0) throw new IllegalArgumentException("softSizeLimit < 0");
+        this.strongSizeLimit = strongSizeLimit;
+        this.softSizeLimit = softSizeLimit;
     }
     
     public Object get(Object key) {
         removeClearedReferences();
-        MruEntry entry = (MruEntry)map.get(key);
-        if(entry == null) {
+        MruEntry entry = (MruEntry) map.get(key);
+        if (entry == null) {
             return null;
         }
         relinkEntryAfterStrongHead(entry, null);
         Object value = entry.getValue();
-        if(value instanceof MruReference) {
-            // This can only happen with maxStrongSize == 0
-            return ((MruReference)value).get();
+        if (value instanceof MruReference) {
+            // This can only happen with strongSizeLimit == 0
+            return ((MruReference) value).get();
         }
         return value;
     }
 
     public void put(Object key, Object value) {
         removeClearedReferences();
-        MruEntry entry = (MruEntry)map.get(key);
-        if(entry == null) {
+        MruEntry entry = (MruEntry) map.get(key);
+        if (entry == null) {
             entry = new MruEntry(key, value);
             map.put(key, entry);
             linkAfterStrongHead(entry);
-        }
-        else {
+        } else {
             relinkEntryAfterStrongHead(entry, value);
         }
         
@@ -113,8 +113,8 @@ public class MruCacheStorage implements CacheStorageWithGetSize
     }
 
     private void removeInternal(Object key) {
-        MruEntry entry = (MruEntry)map.remove(key);
-        if(entry != null) {
+        MruEntry entry = (MruEntry) map.remove(key);
+        if (entry != null) {
             unlinkEntryAndInspectIfSoft(entry);
         }
     }
@@ -125,13 +125,13 @@ public class MruCacheStorage implements CacheStorageWithGetSize
         map.clear();
         strongSize = softSize = 0;
         // Quick refQueue processing
-        while(refQueue.poll() != null);
+        while (refQueue.poll() != null);
     }
 
     private void relinkEntryAfterStrongHead(MruEntry entry, Object newValue) {
-        if(unlinkEntryAndInspectIfSoft(entry) && newValue == null) {
+        if (unlinkEntryAndInspectIfSoft(entry) && newValue == null) {
             // Turn soft reference into strong reference, unless is was cleared
-            MruReference mref = (MruReference)entry.getValue();
+            MruReference mref = (MruReference) entry.getValue();
             Object strongValue = mref.get();
             if (strongValue != null) {
                 entry.setValue(strongValue);
@@ -149,53 +149,49 @@ public class MruCacheStorage implements CacheStorageWithGetSize
 
     private void linkAfterStrongHead(MruEntry entry) {
         entry.linkAfter(strongHead);
-        if(strongSize == maxStrongSize) {
+        if (strongSize == strongSizeLimit) {
             // softHead.previous is LRU strong entry
             MruEntry lruStrong = softHead.getPrevious();
-            // Attila: This is equaivalent to maxStrongSize != 0
-            // DD: But entry.linkAfter(strongHead) was just excuted above, so
-            //     lruStrong != strongHead is true even if maxStrongSize == 0.
-            if(lruStrong != strongHead) {
+            // Attila: This is equaivalent to strongSizeLimit != 0
+            // DD: But entry.linkAfter(strongHead) was just executed above, so
+            //     lruStrong != strongHead is true even if strongSizeLimit == 0.
+            if (lruStrong != strongHead) {
                 lruStrong.unlink();
-                if(maxSoftSize > 0) {
+                if (softSizeLimit > 0) {
                     lruStrong.linkAfter(softHead);
                     lruStrong.setValue(new MruReference(lruStrong, refQueue));
-                    if(softSize == maxSoftSize) {
+                    if (softSize == softSizeLimit) {
                         // List is circular, so strongHead.previous is LRU soft entry
                         MruEntry lruSoft = strongHead.getPrevious();
                         lruSoft.unlink();
                         map.remove(lruSoft.getKey());
-                    }
-                    else {
+                    } else {
                         ++softSize;
                     }
-                }
-                else {
+                } else {
                     map.remove(lruStrong.getKey());
                 }
             }
-        }
-        else {
+        } else {
             ++strongSize;
         }
     }
 
     private boolean unlinkEntryAndInspectIfSoft(MruEntry entry) {
         entry.unlink();
-        if(entry.getValue() instanceof MruReference) {
+        if (entry.getValue() instanceof MruReference) {
             --softSize;
             return true;
-        }
-        else {
+        } else {
             --strongSize;
             return false;
         }
     }
     
     private void removeClearedReferences() {
-        for(;;) {
-            MruReference ref = (MruReference)refQueue.poll();
-            if(ref == null) {
+        for (; ; ) {
+            MruReference ref = (MruReference) refQueue.poll();
+            if (ref == null) {
                 break;
             }
             removeInternal(ref.getKey());
@@ -207,8 +203,8 @@ public class MruCacheStorage implements CacheStorageWithGetSize
      *  
      * @since 2.3.21
      */
-    public int getMaxStrongSize() {
-        return maxStrongSize;
+    public int getStrongSizeLimit() {
+        return strongSizeLimit;
     }
 
     /**
@@ -216,14 +212,14 @@ public class MruCacheStorage implements CacheStorageWithGetSize
      * 
      * @since 2.3.21
      */
-    public int getMaxSoftSize() {
-        return maxSoftSize;
+    public int getSoftSizeLimit() {
+        return softSizeLimit;
     }
 
     /**
      * Returns the <em>current</em> number of strong cache entries.
      *  
-     * @see #getMaxStrongSize()
+     * @see #getStrongSizeLimit()
      * @since 2.3.21
      */
     public int getStrongSize() {
@@ -233,7 +229,7 @@ public class MruCacheStorage implements CacheStorageWithGetSize
     /**
      * Returns a close approximation of the <em>current</em> number of soft cache entries.
      * 
-     * @see #getMaxSoftSize()
+     * @see #getSoftSizeLimit()
      * @since 2.3.21
      */
     public int getSoftSize() {
@@ -252,8 +248,7 @@ public class MruCacheStorage implements CacheStorageWithGetSize
         return getSoftSize() + getStrongSize();
     }
 
-    private static final class MruEntry
-    {
+    private static final class MruEntry {
         private MruEntry prev;
         private MruEntry next;
         private final Object key;
@@ -262,8 +257,7 @@ public class MruCacheStorage implements CacheStorageWithGetSize
         /**
          * Used solely to construct the head element
          */
-        MruEntry()
-        {
+        MruEntry() {
             makeHead();
             key = value = null;
         }
@@ -308,8 +302,7 @@ public class MruCacheStorage implements CacheStorageWithGetSize
         }
     }
     
-    private static class MruReference extends SoftReference
-    {
+    private static class MruReference extends SoftReference {
         private final Object key;
         
         MruReference(MruEntry entry, ReferenceQueue queue) {

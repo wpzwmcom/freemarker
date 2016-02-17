@@ -35,22 +35,40 @@ class JavaTemplateDateFormat extends TemplateDateFormat {
         this.javaDateFormat = javaDateFormat;
     }
     
+    @Override
     public String format(TemplateDateModel dateModel) throws TemplateModelException {
-        return javaDateFormat.format(dateModel.getAsDate());
+        return javaDateFormat.format(TemplateFormatUtil.getNonNullDate(dateModel));
     }
 
+    @Override
     public Date parse(String s) throws ParseException {
         return javaDateFormat.parse(s);
     }
 
+    @Override
     public String getDescription() {
         return javaDateFormat instanceof SimpleDateFormat
                 ? ((SimpleDateFormat) javaDateFormat).toPattern()
                 : javaDateFormat.toString();
     }
 
+    @Override
     public boolean isLocaleBound() {
         return true;
+    }
+
+    @Override
+    public boolean isTimeZoneBound() {
+        return true;
+    }
+    
+    /**
+     * Always returns {@code null} (there's no markup format).
+     */
+    @Override
+    public <MO extends TemplateMarkupOutputModel> MO format(TemplateDateModel dateModel,
+            MarkupOutputFormat<MO> outputFormat) throws UnformattableNumberException, TemplateModelException {
+        return null;
     }
 
 }

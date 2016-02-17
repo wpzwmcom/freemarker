@@ -39,12 +39,12 @@ public class ResourceBundleLocalizedString extends LocalizedString {
 		this.resourceKey = resourceKey;
 	}
 
-	public String getLocalizedString(Locale locale) throws TemplateModelException {
+	@Override
+    public String getLocalizedString(Locale locale) throws TemplateModelException {
 		try {
 			ResourceBundle rb = ResourceBundle.getBundle(resourceBundleLookupKey, locale);
 			return rb.getString(resourceKey);
-		}
-		catch (MissingResourceException mre) {
+		} catch (MissingResourceException mre) {
 			throw new TemplateModelException("missing resource", mre);
 		}
 	}

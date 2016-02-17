@@ -44,6 +44,7 @@ class URLTemplateSource {
         }
     }
 
+    @Override
     public boolean equals(Object o) {
         if (o instanceof URLTemplateSource) {
             return url.equals(((URLTemplateSource) o).url);
@@ -52,10 +53,12 @@ class URLTemplateSource {
         }
     }
 
+    @Override
     public int hashCode() {
         return url.hashCode();
     }
 
+    @Override
     public String toString() {
         return url.toString();
     }
@@ -65,21 +68,21 @@ class URLTemplateSource {
           // There is a bug in sun's jar url connection that causes file handle leaks when calling getLastModified()
           // Since the time stamps of jar file contents can't vary independent from the jar file timestamp, just use
           // the jar file timestamp
-          URL jarURL=((JarURLConnection)conn).getJarFileURL();
+          URL jarURL = ((JarURLConnection) conn).getJarFileURL();
           if (jarURL.getProtocol().equals("file")) {
             // Return the last modified time of the underlying file - saves some opening and closing
             return new File(jarURL.getFile()).lastModified();
           } else {
             // Use the URL mechanism
-            URLConnection jarConn=null;
+            URLConnection jarConn = null;
             try {
-              jarConn=jarURL.openConnection();
+              jarConn = jarURL.openConnection();
               return jarConn.getLastModified();
             } catch (IOException e) {
               return -1;
             } finally {
               try {
-                if (jarConn!=null) jarConn.getInputStream().close();
+                if (jarConn != null) jarConn.getInputStream().close();
               } catch (IOException e) { }
             }
           }

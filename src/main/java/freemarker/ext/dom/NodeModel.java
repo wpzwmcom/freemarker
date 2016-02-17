@@ -48,6 +48,7 @@ import freemarker.core._UnexpectedTypeErrorExplainerTemplateModel;
 import freemarker.ext.util.WrapperTemplateModel;
 import freemarker.log.Logger;
 import freemarker.template.AdapterTemplateModel;
+import freemarker.template.DefaultObjectWrapper;
 import freemarker.template.SimpleScalar;
 import freemarker.template.TemplateBooleanModel;
 import freemarker.template.TemplateDateModel;
@@ -60,13 +61,17 @@ import freemarker.template.TemplateSequenceModel;
 
 /**
  * A base class for wrapping a W3C DOM Node as a FreeMarker template model.
+ * 
+ * <p>
+ * Note that {@link DefaultObjectWrapper} automatically wraps W3C DOM {@link Node}-s into this, so you may not need to
+ * do that with this class manually. Though, before dropping the {@link Node}-s into the data-model, you may want to
+ * apply {@link NodeModel#simplify(Node)} on them.
  */
 abstract public class NodeModel
 implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
-    AdapterTemplateModel, WrapperTemplateModel, _UnexpectedTypeErrorExplainerTemplateModel
-{
+    AdapterTemplateModel, WrapperTemplateModel, _UnexpectedTypeErrorExplainerTemplateModel {
 
-    static final Logger logger = Logger.getLogger("freemarker.dom");
+    static private final Logger LOG = Logger.getLogger("freemarker.dom");
 
     private static final Object STATIC_LOCK = new Object();
     
@@ -86,8 +91,8 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
         } catch (Exception e) {
             // do nothing
         }
-        if (xpathSupportClass == null && logger.isWarnEnabled()) {
-            logger.warn("No XPath support is available.");
+        if (xpathSupportClass == null && LOG.isWarnEnabled()) {
+            LOG.warn("No XPath support is available.");
         }
     }
     
@@ -151,8 +156,7 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
      * (recursively from the tree before processing
      */
     static public NodeModel parse(InputSource is, boolean removeComments, boolean removePIs)
-        throws SAXException, IOException, ParserConfigurationException 
-    {
+        throws SAXException, IOException, ParserConfigurationException {
         DocumentBuilder builder = getDocumentBuilderFactory().newDocumentBuilder();
         ErrorHandler errorHandler = getErrorHandler();
         if (errorHandler != null) builder.setErrorHandler(errorHandler);
@@ -204,8 +208,7 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
      * (recursively from the tree before processing
      */
     static public NodeModel parse(File f, boolean removeComments, boolean removePIs) 
-        throws SAXException, IOException, ParserConfigurationException 
-    {
+        throws SAXException, IOException, ParserConfigurationException {
         DocumentBuilder builder = getDocumentBuilderFactory().newDocumentBuilder();
         ErrorHandler errorHandler = getErrorHandler();
         if (errorHandler != null) builder.setErrorHandler(errorHandler);
@@ -259,13 +262,13 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
                 return new SimpleScalar(localName);
             }
             if (key.equals("@@markup")) {
-                StringBuffer buf = new StringBuffer();
+                StringBuilder buf = new StringBuilder();
                 NodeOutputter nu = new NodeOutputter(node);
                 nu.outputContent(node, buf);
                 return new SimpleScalar(buf.toString());
             }
             if (key.equals("@@nested_markup")) {
-                StringBuffer buf = new StringBuffer();
+                StringBuilder buf = new StringBuilder();
                 NodeOutputter nu = new NodeOutputter(node);
                 nu.outputContent(node.getChildNodes(), buf);
                 return new SimpleScalar(buf.toString());
@@ -340,7 +343,7 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
     public final int size() {return 1;}
     
     public final TemplateModel get(int i) {
-        return i==0 ? this : null;
+        return i == 0 ? this : null;
     }
     
     public String getNodeNamespace() {
@@ -357,10 +360,12 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
         return result;
     }
     
+    @Override
     public final int hashCode() {
         return node.hashCode();
     }
     
+    @Override
     public boolean equals(Object other) {
         if (other == null) return false;
         return other.getClass() == this.getClass() 
@@ -455,8 +460,7 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
                     ((CharacterData) child).setData(fullText);
                     node.removeChild(next);
                 }
-            }
-            else {
+            } else {
                 mergeAdjacentText(child);
             }
             child = child.getNextSibling();
@@ -507,8 +511,7 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
     NodeModel getDocumentNodeModel() {
         if (node instanceof Document) {
             return this;
-        }
-        else {
+        } else {
             return wrap(node.getOwnerDocument());
         }
     }
@@ -550,8 +553,8 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
         synchronized (STATIC_LOCK) {
             xpathSupportClass = c;
         }
-        if (logger.isDebugEnabled()) {
-            logger.debug("Using Jaxen classes for XPath support");
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Using Jaxen classes for XPath support");
         }
     }
     
@@ -565,8 +568,8 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
         synchronized (STATIC_LOCK) {
             xpathSupportClass = c;
         }
-        if (logger.isDebugEnabled()) {
-            logger.debug("Using Xalan classes for XPath support");
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Using Xalan classes for XPath support");
         }
     }
     
@@ -576,8 +579,8 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
         synchronized (STATIC_LOCK) {
             xpathSupportClass = c;
         }
-        if (logger.isDebugEnabled()) {
-            logger.debug("Using Sun's internal Xalan classes for XPath support");
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Using Sun's internal Xalan classes for XPath support");
         }
     }
     
@@ -610,14 +613,12 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
         String result = "";
         if (node instanceof Text || node instanceof CDATASection) {
             result = ((org.w3c.dom.CharacterData) node).getData();
-        }
-        else if (node instanceof Element) {
+        } else if (node instanceof Element) {
             NodeList children = node.getChildNodes();
-            for (int i= 0; i<children.getLength(); i++) {
+            for (int i = 0; i < children.getLength(); i++) {
                 result += getText(children.item(i));
             }
-        }
-        else if (node instanceof Document) {
+        } else if (node instanceof Document) {
             result = getText(((Document) node).getDocumentElement());
         }
         return result;
@@ -642,7 +643,7 @@ implements TemplateNodeModel, TemplateHashModel, TemplateSequenceModel,
                     xps = (XPathSupport) xpathSupportClass.newInstance();
                     xpathSupportMap.put(doc, new WeakReference(xps));
                 } catch (Exception e) {
-                    logger.error("Error instantiating xpathSupport class", e);
+                    LOG.error("Error instantiating xpathSupport class", e);
                 }                
             }
         }

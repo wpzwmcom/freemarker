@@ -30,21 +30,19 @@ import freemarker.template.TemplateSequenceModel;
 /**
  * <p>A special case of {@link BeanModel} that can wrap Java collections
  * and that implements the {@link TemplateCollectionModel} in order to be usable 
- * in a <tt>&lt;foreach></tt> block.</p>
+ * in a <tt>&lt;#list&gt;</tt> block.</p>
  */
 public class CollectionModel
 extends
     StringModel
 implements
     TemplateCollectionModel,
-    TemplateSequenceModel
-{
+    TemplateSequenceModel {
     static final ModelFactory FACTORY =
         new ModelFactory()
         {
-            public TemplateModel create(Object object, ObjectWrapper wrapper)
-            {
-                return new CollectionModel((Collection)object, (BeansWrapper)wrapper);
+            public TemplateModel create(Object object, ObjectWrapper wrapper) {
+                return new CollectionModel((Collection) object, (BeansWrapper) wrapper);
             }
         };
 
@@ -57,8 +55,7 @@ implements
      * model gains many attributes from its wrapper, including the caching 
      * behavior, method exposure level, method-over-item shadowing policy etc.
      */
-    public CollectionModel(Collection collection, BeansWrapper wrapper)
-    {
+    public CollectionModel(Collection collection, BeansWrapper wrapper) {
         super(collection, wrapper);
     }
 
@@ -68,24 +65,16 @@ implements
      * underlying collection is not a List.
      */
     public TemplateModel get(int index)
-    throws
-        TemplateModelException
-    {
+    throws TemplateModelException {
         // Don't forget to keep getSupportsIndexedAccess in sync with this!
-        if (object instanceof List)
-        {
-            try
-            {
-                return wrap(((List)object).get(index));
-            }
-            catch(IndexOutOfBoundsException e)
-            {
+        if (object instanceof List) {
+            try {
+                return wrap(((List) object).get(index));
+            } catch (IndexOutOfBoundsException e) {
                 return null;
 //                throw new TemplateModelException("Index out of bounds: " + index);
             }
-        }
-        else
-        {
+        } else {
             throw new TemplateModelException("Underlying collection is not a list, it's " + object.getClass().getName());
         }
     }
@@ -103,13 +92,13 @@ implements
         return object instanceof List;
     }
     
-    public TemplateModelIterator iterator()
-    {
-        return new IteratorModel(((Collection)object).iterator(), wrapper);
+    public TemplateModelIterator iterator() {
+        return new IteratorModel(((Collection) object).iterator(), wrapper);
     }
 
-    public int size()
-    {
-        return ((Collection)object).size();
+    @Override
+    public int size() {
+        return ((Collection) object).size();
     }
+    
 }

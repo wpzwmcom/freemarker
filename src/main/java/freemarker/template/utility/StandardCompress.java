@@ -39,7 +39,7 @@ import freemarker.template.TemplateTransformModel;
  *
  * <p><b>Note:</b> The compress tag is implemented using this filter</p>
  * 
- * <p>Usage:<br />
+ * <p>Usage:<br>
  * From java:</p>
  * <pre>
  * SimpleHash root = new SimpleHash();
@@ -73,34 +73,31 @@ public class StandardCompress implements TemplateTransformModel {
 
     public static final StandardCompress INSTANCE = new StandardCompress();
     
-    public StandardCompress()
-    {
+    public StandardCompress() {
         this(2048);
     }
 
     /**
      * @param defaultBufferSize the default amount of characters to buffer
      */
-    public StandardCompress(int defaultBufferSize)
-    {
+    public StandardCompress(int defaultBufferSize) {
         this.defaultBufferSize = defaultBufferSize;
     }
 
     public Writer getWriter(final Writer out, Map args)
-    throws TemplateModelException
-    {
+    throws TemplateModelException {
         int bufferSize = defaultBufferSize;
         boolean singleLine = false;
         if (args != null) {
             try {
-                TemplateNumberModel num = (TemplateNumberModel)args.get(BUFFER_SIZE_KEY);
+                TemplateNumberModel num = (TemplateNumberModel) args.get(BUFFER_SIZE_KEY);
                 if (num != null)
                     bufferSize = num.getAsNumber().intValue();
             } catch (ClassCastException e) {
                 throw new TemplateModelException("Expecting numerical argument to " + BUFFER_SIZE_KEY);
             }
             try {
-                TemplateBooleanModel flag = (TemplateBooleanModel)args.get(SINGLE_LINE_KEY);
+                TemplateBooleanModel flag = (TemplateBooleanModel) args.get(SINGLE_LINE_KEY);
                 if (flag != null)
                     singleLine = flag.getAsBoolean();
             } catch (ClassCastException e) {
@@ -110,8 +107,7 @@ public class StandardCompress implements TemplateTransformModel {
         return new StandardCompressWriter(out, bufferSize, singleLine);
     }
 
-    private static class StandardCompressWriter extends Writer
-    {
+    private static class StandardCompressWriter extends Writer {
         private static final int MAX_EOL_LENGTH = 2; // CRLF is two bytes
         
         private static final int AT_BEGINNING = 0;
@@ -136,8 +132,9 @@ public class StandardCompress implements TemplateTransformModel {
             buf = new char[bufSize];
         }
 
+        @Override
         public void write(char[] cbuf, int off, int len) throws IOException {
-            for (;;) {
+            for (; ; ) {
                 // Need to reserve space for the EOL potentially left in the state machine
                 int room = buf.length - pos - MAX_EOL_LENGTH; 
                 if (room >= len) {
@@ -177,8 +174,7 @@ public class StandardCompress implements TemplateTransformModel {
           [^\r]\n => LF
           ^\n     => LF
         */
-        private void updateLineBreakState(char c)
-        {
+        private void updateLineBreakState(char c) {
             switch (lineBreakState) {
             case INIT:
                 if (c == '\r') {
@@ -196,8 +192,7 @@ public class StandardCompress implements TemplateTransformModel {
             }
         }
 
-        private void writeLineBreakOrSpace()
-        {
+        private void writeLineBreakOrSpace() {
             switch (lineBreakState) {
             case SAW_CR:
                 // whitespace ended with CR, fall through
@@ -225,11 +220,13 @@ public class StandardCompress implements TemplateTransformModel {
             pos = 0;
         }
 
+        @Override
         public void flush() throws IOException {
             flushInternal();
             out.flush();
         }
 
+        @Override
         public void close() throws IOException {
             flushInternal();
         }

@@ -1,29 +1,26 @@
-<html>
-<head>
-<title>FreeMarker: Extended List Test</title>
-</head>
-<body>
-<#assign animals = ["aardvark", 
-                 "kiwi", 
-                 "gecko", 
-                 "cat", 
-                 "dog", 
-                 "elephant", 
-                 "squirrel",
-                 "zebra"]>
+<@testList ["aardvark", "bear", "cat", "dog"] />
 
-<p>A simple test follows:</p>
+<@testList ["aardvark"] />
 
-<p>${message}</p>
+<@testList [] />
 
-<p>A list of ${animals?size} animals follows:</p>
-<p><#foreach animal in animals>
-  ${animal}<#if animal_has_next>, <#else>.</#if>
-</#foreach></p>
+<@testList listables.list />
 
-<p>The first animal is an ${animals?first}, and the last is a 
-${animals?last}.</p>
+<@testList listables.linkedList />
 
-<p>The end.</p>
-</body>
-</html>
+<@testList listables.set />
+
+<@testList listables.iterator />
+
+<@testList listables.emptyList />
+
+<@testList listables.emptyLinkedList />
+
+<@testList listables.emptySet />
+
+<@testList listables.emptyIterator />
+
+<#macro testList seq>
+Size: <#attempt>${seq?size}<#recover>failed</#attempt>
+Items: <#list seq as i>@${i_index} ${i}<#if i_has_next>, <#else>.</#if></#list>
+</#macro>

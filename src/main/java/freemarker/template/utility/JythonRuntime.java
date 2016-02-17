@@ -31,29 +31,30 @@ import freemarker.template.TemplateTransformModel;
  */
 
 public class JythonRuntime extends PythonInterpreter
-    implements TemplateTransformModel
-{
+    implements TemplateTransformModel {
     public Writer getWriter(final Writer out,
-                            final Map args)
-    {
-        final StringBuffer buf = new StringBuffer();
+                            final Map args) {
+        final StringBuilder buf = new StringBuilder();
         final Environment env = Environment.getCurrentEnvironment();
         return new Writer() {
+            @Override
             public void write(char cbuf[], int off, int len) {
                 buf.append(cbuf, off, len);
             }
 
+            @Override
             public void flush() throws IOException {
                 interpretBuffer();
                 out.flush();
             }
 
+            @Override
             public void close() {
                 interpretBuffer();
             }
 
             private void interpretBuffer() {
-                synchronized(JythonRuntime.this) {
+                synchronized (JythonRuntime.this) {
                     PyObject prevOut = systemState.stdout;
                     try {
                         setOut(out);

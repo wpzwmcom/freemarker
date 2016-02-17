@@ -40,9 +40,8 @@ import freemarker.template.utility.CollectionUtils;
  */
 public class TemplateException extends Exception {
 
-    private static final String THE_FAILING_INSTRUCTION = "The failing instruction";
-    private static final String THE_FAILING_INSTRUCTION_FTL_STACK_TRACE
-            = THE_FAILING_INSTRUCTION + " (FTL stack trace):";
+    private static final String FTL_INSTRUCTION_STACK_TRACE_TITLE
+            = "FTL stack trace (\"~\" means nesting-related):";
 
     // Set in constructor:
     private transient _ErrorDescriptionBuilder descriptionBuilder;
@@ -60,6 +59,7 @@ public class TemplateException extends Exception {
     private String blamedExpressionString;
     private boolean positionsCalculated;
     private String templateName;
+    private String templateSourceName;
     private Integer lineNumber; 
     private Integer columnNumber; 
     private Integer endLineNumber; 
@@ -145,7 +145,7 @@ public class TemplateException extends Exception {
     private TemplateException(
             String renderedDescription,
             Throwable cause,            
-            Environment env, Expression expression,
+            Environment env, Expression blamedExpression,
             _ErrorDescriptionBuilder descriptionBuilder) {
         // Note: Keep this constructor lightweight.
         
@@ -154,18 +154,18 @@ public class TemplateException extends Exception {
         if (env == null) env = Environment.getCurrentEnvironment();
         this.env = env;
         
-        this.blamedExpression = expression;
+        this.blamedExpression = blamedExpression;
         
         this.descriptionBuilder = descriptionBuilder;
         description = renderedDescription;
         
-        if(env != null) ftlInstructionStackSnapshot = _CoreAPI.getInstructionStackSnapshot(env);
+        if (env != null) ftlInstructionStackSnapshot = _CoreAPI.getInstructionStackSnapshot(env);
     }
     
-    private void renderMessages()  {
+    private void renderMessages() {
         String description = getDescription();
         
-        if(description != null && description.length() != 0) {
+        if (description != null && description.length() != 0) {
             messageWithoutStackTop = description;
         } else if (getCause() != null) {
             messageWithoutStackTop = "No error description was specified for this error; low-level message: "
@@ -174,10 +174,14 @@ public class TemplateException extends Exception {
             messageWithoutStackTop = "[No error description was available.]";
         }
         
-        String stackTop = getFTLInstructionStackTop();
-        if (stackTop != null) {
-            message = messageWithoutStackTop + "\n\n" + THE_FAILING_INSTRUCTION + stackTop;
-            messageWithoutStackTop = message.substring(0, messageWithoutStackTop.length());  // to reuse the backing char[]
+        String stackTopFew = getFTLInstructionStackTopFew();
+        if (stackTopFew != null) {
+            message = messageWithoutStackTop + "\n\n"
+                    + _CoreAPI.ERROR_MESSAGE_HR + "\n"
+                    + FTL_INSTRUCTION_STACK_TRACE_TITLE + "\n"
+                    + stackTopFew
+                    + _CoreAPI.ERROR_MESSAGE_HR;
+            messageWithoutStackTop = message.substring(0, messageWithoutStackTop.length());  // to reuse backing char[]
         } else {
             message = messageWithoutStackTop;
         }
@@ -196,10 +200,11 @@ public class TemplateException extends Exception {
                 if (templateObject != null && templateObject.getBeginLine() > 0) {
                     final Template template = templateObject.getTemplate();
                     templateName = template != null ? template.getName() : null;
-                    lineNumber = new Integer(templateObject.getBeginLine());
-                    columnNumber = new Integer(templateObject.getBeginColumn());
-                    endLineNumber = new Integer(templateObject.getEndLine());
-                    endColumnNumber = new Integer(templateObject.getEndColumn());
+                    templateSourceName = template != null ? template.getSourceName() : null;
+                    lineNumber = Integer.valueOf(templateObject.getBeginLine());
+                    columnNumber = Integer.valueOf(templateObject.getBeginColumn());
+                    endLineNumber = Integer.valueOf(templateObject.getEndLine());
+                    endColumnNumber = Integer.valueOf(templateObject.getEndColumn());
                 }
                 positionsCalculated = true;
                 deleteFTLInstructionStackSnapshotIfNotNeeded();
@@ -211,6 +216,7 @@ public class TemplateException extends Exception {
      * @deprecated Java 1.4 has introduced {@link #getCause()} - use that instead, especially as this can't return
      * runtime exceptions and errors as is.
      */
+    @Deprecated
     public Exception getCauseException() {
         return getCause() instanceof Exception
                 ? (Exception) getCause()
@@ -218,7 +224,7 @@ public class TemplateException extends Exception {
     }
 
     /**
-     * Returns the snapshot of the FTL stack strace at the time this exception was created.
+     * Returns the snapshot of the FTL stack trace at the time this exception was created.
      */
     public String getFTLInstructionStack() {
         synchronized (lock) {
@@ -226,7 +232,7 @@ public class TemplateException extends Exception {
                 if (renderedFtlInstructionStackSnapshot == null) {
                     StringWriter sw = new StringWriter();
                     PrintWriter pw = new PrintWriter(sw);
-                    _CoreAPI.outputInstructionStack(ftlInstructionStackSnapshot, pw);
+                    _CoreAPI.outputInstructionStack(ftlInstructionStackSnapshot, false, pw);
                     pw.close();
                     if (renderedFtlInstructionStackSnapshot == null) {
                         renderedFtlInstructionStackSnapshot = sw.toString();
@@ -240,7 +246,7 @@ public class TemplateException extends Exception {
         }
     }
     
-    private String getFTLInstructionStackTop() {
+    private String getFTLInstructionStackTopFew() {
         synchronized (lock) {
             if (ftlInstructionStackSnapshot != null || renderedFtlInstructionStackSnapshotTop != null) {
                 if (renderedFtlInstructionStackSnapshotTop == null) {
@@ -249,16 +255,17 @@ public class TemplateException extends Exception {
                     if (stackSize == 0) {
                         s = "";
                     } else {
-                        s = (stackSize > 1 ? " (print stack trace for " + (stackSize - 1) + " more)" : "")
-                            + ":\n==> "
-                            + _CoreAPI.instructionStackItemToString(ftlInstructionStackSnapshot[0]);
+                        StringWriter sw = new StringWriter();
+                        _CoreAPI.outputInstructionStack(ftlInstructionStackSnapshot, true, sw);
+                        s = sw.toString();
                     }
                     if (renderedFtlInstructionStackSnapshotTop == null) {
                         renderedFtlInstructionStackSnapshotTop = s;
                         deleteFTLInstructionStackSnapshotIfNotNeeded();
                     }
                 }
-                return renderedFtlInstructionStackSnapshotTop.length() != 0 ? renderedFtlInstructionStackSnapshotTop : null;
+                return renderedFtlInstructionStackSnapshotTop.length() != 0
+                        ? renderedFtlInstructionStackSnapshotTop : null;
             } else {
                 return null;
             }
@@ -304,6 +311,7 @@ public class TemplateException extends Exception {
     /**
      * Overrides {@link Throwable#printStackTrace(PrintStream)} so that it will include the FTL stack trace.
      */
+    @Override
     public void printStackTrace(PrintStream out) {
         printStackTrace(out, true, true, true);
     }
@@ -311,6 +319,7 @@ public class TemplateException extends Exception {
     /**
      * Overrides {@link Throwable#printStackTrace(PrintWriter)} so that it will include the FTL stack trace.
      */
+    @Override
     public void printStackTrace(PrintWriter out) {
         printStackTrace(out, true, true, true);
     }
@@ -351,9 +360,11 @@ public class TemplateException extends Exception {
                 String stackTrace = getFTLInstructionStack();
                 if (stackTrace != null) {
                     out.println(getMessageWithoutStackTop());  // Not getMessage()!
-                    out.println("");
-                    out.println(THE_FAILING_INSTRUCTION_FTL_STACK_TRACE);
+                    out.println();
+                    out.println(_CoreAPI.ERROR_MESSAGE_HR);
+                    out.println(FTL_INSTRUCTION_STACK_TRACE_TITLE);
                     out.print(stackTrace);
+                    out.println(_CoreAPI.ERROR_MESSAGE_HR);
                 } else {
                     ftlStackTrace = false;
                     javaStackTrace = true;
@@ -364,7 +375,7 @@ public class TemplateException extends Exception {
                 if (ftlStackTrace) {  // We are after an FTL stack trace
                     out.println();
                     out.println("Java stack trace (for programmers):");
-                    out.println(_CoreAPI.STACK_SECTION_SEPARATOR);
+                    out.println(_CoreAPI.ERROR_MESSAGE_HR);
                     synchronized (lock) {
                         if (messageWasAlreadyPrintedForThisTrace == null) {
                             messageWasAlreadyPrintedForThisTrace = new ThreadLocal();
@@ -418,11 +429,13 @@ public class TemplateException extends Exception {
         super.printStackTrace(pw);
     }
 
+    @Override
     public String getMessage() {
-        if (messageWasAlreadyPrintedForThisTrace != null && messageWasAlreadyPrintedForThisTrace.get() == Boolean.TRUE) {
+        if (messageWasAlreadyPrintedForThisTrace != null
+                && messageWasAlreadyPrintedForThisTrace.get() == Boolean.TRUE) {
             return "[... Exception message was already printed; see it above ...]";
         } else {
-            synchronized (lock) {  // Switch to double-check + volatile with Java 5
+            synchronized (lock) {
                 if (message == null) renderMessages();
                 return message;
             }
@@ -456,17 +469,37 @@ public class TemplateException extends Exception {
     }
 
     /**
-     * Returns the name of the template where the error has occurred, or {@code null} if the information isn't
-     * available. This will be the full template name, regardless of how the template was invoked.
+     * Returns the name ({@link Template#getName()}) of the template where the error has occurred, or {@code null} if
+     * the information isn't available. This shouldn't be used for showing the error position; use
+     * {@link #getTemplateSourceName()} instead.
+     * 
+     * @deprecated Use {@link #getTemplateSourceName()} instead, unless you are really sure that this is what you want.
+     *             This method isn't really deprecated, it's just marked so to warn users about this.
      * 
      * @since 2.3.21
      */
+    @Deprecated
     public String getTemplateName() {
         synchronized (lock) {
             if (!positionsCalculated) {
                 calculatePosition();
             }
             return templateName;
+        }
+    }
+
+    /**
+     * Returns the source name ({@link Template#getSourceName()}) of the template where the error has occurred, or
+     * {@code null} if the information isn't available. This is what should be used for showing the error position.
+     * 
+     * @since 2.3.22
+     */
+    public String getTemplateSourceName() {
+        synchronized (lock) {
+            if (!positionsCalculated) {
+                calculatePosition();
+            }
+            return templateSourceName;
         }
     }
     
@@ -537,7 +570,7 @@ public class TemplateException extends Exception {
     private void writeObject(ObjectOutputStream out) throws IOException, ClassNotFoundException {
         // These are calculated from transient fields, so this is the last chance to calculate them: 
         getFTLInstructionStack();
-        getFTLInstructionStackTop();
+        getFTLInstructionStackTopFew();
         getDescription();
         calculatePosition();
         getBlamedExpressionString();

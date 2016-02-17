@@ -42,8 +42,7 @@ public class JythonHashModel
 extends 
     JythonModel 
 implements 
-    TemplateHashModelEx
-{
+    TemplateHashModelEx {
     private static final String KEYS = "keys";
     private static final String KEYSET = "keySet";
     private static final String VALUES = "values";
@@ -51,28 +50,22 @@ implements
     static final ModelFactory FACTORY =
         new ModelFactory()
         {
-            public TemplateModel create(Object object, ObjectWrapper wrapper)
-            {
-                return new JythonHashModel((PyObject)object, (JythonWrapper)wrapper);
+            public TemplateModel create(Object object, ObjectWrapper wrapper) {
+                return new JythonHashModel((PyObject) object, (JythonWrapper) wrapper);
             }
         };
         
-    public JythonHashModel(PyObject object, JythonWrapper wrapper)
-    {
+    public JythonHashModel(PyObject object, JythonWrapper wrapper) {
         super(object, wrapper);
     }
     
     /**
      * Returns {@link PyObject#__len__()}.
      */
-    public int size() throws TemplateModelException
-    {
-        try
-        {
+    public int size() throws TemplateModelException {
+        try {
             return object.__len__();
-        }
-        catch(PyException e)
-        {
+        } catch (PyException e) {
             throw new TemplateModelException(e);
         }
     }
@@ -81,22 +74,16 @@ implements
      * Returns either <code>object.__findattr__("keys").__call__()</code>
      * or <code>object.__findattr__("keySet").__call__()</code>.
      */
-    public TemplateCollectionModel keys() throws TemplateModelException
-    {
-        try
-        {
+    public TemplateCollectionModel keys() throws TemplateModelException {
+        try {
             PyObject method = object.__findattr__(KEYS);
-            if(method == null)
-            {
+            if (method == null) {
                 method = object.__findattr__(KEYSET);
             }
-            if(method != null)
-            {
-                return (TemplateCollectionModel)wrapper.wrap(method.__call__());
+            if (method != null) {
+                return (TemplateCollectionModel) wrapper.wrap(method.__call__());
             }
-        }
-        catch(PyException e)
-        {
+        } catch (PyException e) {
             throw new TemplateModelException(e);
         }
         throw new TemplateModelException(
@@ -107,18 +94,13 @@ implements
     /**
      * Returns <code>object.__findattr__("values").__call__()</code>.
      */
-    public TemplateCollectionModel values() throws TemplateModelException
-    {
-        try
-        {
+    public TemplateCollectionModel values() throws TemplateModelException {
+        try {
             PyObject method = object.__findattr__(VALUES);
-            if(method != null)
-            {
-                return (TemplateCollectionModel)wrapper.wrap(method.__call__());
+            if (method != null) {
+                return (TemplateCollectionModel) wrapper.wrap(method.__call__());
             }
-        }
-        catch(PyException e)
-        {
+        } catch (PyException e) {
             throw new TemplateModelException(e);
         }
         throw new TemplateModelException(

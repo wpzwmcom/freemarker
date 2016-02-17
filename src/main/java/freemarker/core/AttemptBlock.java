@@ -17,7 +17,6 @@
 package freemarker.core;
 
 import java.io.IOException;
-import java.util.ArrayList;
 
 import freemarker.template.TemplateException;
 
@@ -32,53 +31,63 @@ final class AttemptBlock extends TemplateElement {
     AttemptBlock(TemplateElement attemptBlock, RecoveryBlock recoveryBlock) {
         this.attemptBlock = attemptBlock;
         this.recoveryBlock = recoveryBlock;
-        nestedElements = new ArrayList();
-        nestedElements.add(attemptBlock);
-        nestedElements.add(recoveryBlock);
+        setRegulatedChildBufferCapacity(2);
+        addRegulatedChild(attemptBlock);
+        addRegulatedChild(recoveryBlock);
     }
 
-    void accept(Environment env) throws TemplateException, IOException 
-    {
+    @Override
+    void accept(Environment env) throws TemplateException, IOException {
         env.visitAttemptRecover(attemptBlock, recoveryBlock);
     }
 
+    @Override
     protected String dump(boolean canonical) {
         if (!canonical) {
             return getNodeTypeSymbol();
         } else {
-            StringBuffer buf = new StringBuffer();
-            buf.append("<");
-            buf.append(getNodeTypeSymbol());
-            buf.append(">");
+            StringBuilder buf = new StringBuilder();
+            buf.append("<").append(getNodeTypeSymbol()).append(">");
             if (attemptBlock != null) {
                 buf.append(attemptBlock.getCanonicalForm());            
             }
             if (recoveryBlock != null) {
                 buf.append(recoveryBlock.getCanonicalForm());
             }
+            buf.append("</").append(getNodeTypeSymbol()).append(">");
             return buf.toString();
         }
     }
     
+    @Override
     int getParameterCount() {
         return 1;
     }
 
+    @Override
     Object getParameterValue(int idx) {
         if (idx != 0) throw new IndexOutOfBoundsException();
         return recoveryBlock;
     }
 
+    @Override
     ParameterRole getParameterRole(int idx) {
         if (idx != 0) throw new IndexOutOfBoundsException();
         return ParameterRole.ERROR_HANDLER;
     }
     
+    @Override
     String getNodeTypeSymbol() {
         return "#attempt";
     }
     
+    @Override
     boolean isShownInStackTrace() {
+        return false;
+    }
+
+    @Override
+    boolean isNestedBlockRepeater() {
         return false;
     }
     

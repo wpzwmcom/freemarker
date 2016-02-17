@@ -34,13 +34,13 @@ import java.io.IOException;
  * Implementation of PageContext that contains JSP 2.0 specific methods.
  */
 public class _FreeMarkerPageContext2 extends FreeMarkerPageContext {
-    private static final Logger logger = Logger.getLogger("freemarker.jsp");
+    private static final Logger LOG = Logger.getLogger("freemarker.jsp");
 
     static {
-        if(JspFactory.getDefaultFactory() == null) {
+        if (JspFactory.getDefaultFactory() == null) {
             JspFactory.setDefaultFactory(new FreeMarkerJspFactory2());
         }
-        logger.debug("Using JspFactory implementation class " + 
+        LOG.debug("Using JspFactory implementation class " + 
                 JspFactory.getDefaultFactory().getClass().getName());
     }
 
@@ -58,8 +58,7 @@ public class _FreeMarkerPageContext2 extends FreeMarkerPageContext {
             Class type = Thread.currentThread().getContextClassLoader().loadClass
                     ("org.apache.commons.el.ExpressionEvaluatorImpl");
             return (ExpressionEvaluator) type.newInstance();
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             throw new UnsupportedOperationException("In order for the getExpressionEvaluator() " +
                 "method to work, you must have downloaded the apache commons-el jar and " +
                 "made it available in the classpath.");

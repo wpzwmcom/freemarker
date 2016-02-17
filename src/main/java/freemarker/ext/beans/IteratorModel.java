@@ -43,8 +43,7 @@ extends
     BeanModel
 implements
     TemplateModelIterator,
-    TemplateCollectionModel
-{
+    TemplateCollectionModel {
     private boolean accessed = false;
     
     /**
@@ -55,19 +54,17 @@ implements
      * model gains many attributes from its wrapper, including the caching 
      * behavior, method exposure level, method-over-item shadowing policy etc.
      */
-    public IteratorModel(Iterator iterator, BeansWrapper wrapper)
-    {
+    public IteratorModel(Iterator iterator, BeansWrapper wrapper) {
         super(iterator, wrapper);
     }
 
     /**
-     * This allows the iterator to be used in a <tt>&lt;foreach></tt> block.
+     * This allows the iterator to be used in a <tt>&lt;#list&gt;</tt> block.
      * @return "this"
      */
-    public TemplateModelIterator iterator() throws TemplateModelException
-    {
-        synchronized(this) {
-            if(accessed) {
+    public TemplateModelIterator iterator() throws TemplateModelException {
+        synchronized (this) {
+            if (accessed) {
                 throw new TemplateModelException(
                     "This collection is stateful and can not be iterated over the" +
                     " second time.");
@@ -81,7 +78,7 @@ implements
      * Calls underlying {@link Iterator#hasNext()}.
      */
     public boolean hasNext() {
-        return ((Iterator)object).hasNext();
+        return ((Iterator) object).hasNext();
     }
 
 
@@ -89,13 +86,10 @@ implements
      * Calls underlying {@link Iterator#next()} and wraps the result.
      */
     public TemplateModel next()
-    throws
-        TemplateModelException
-    {
+    throws TemplateModelException {
         try {
-            return wrap(((Iterator)object).next());
-        }
-        catch(NoSuchElementException e) {
+            return wrap(((Iterator) object).next());
+        } catch (NoSuchElementException e) {
             throw new TemplateModelException(
                 "No more elements in the iterator.", e);
         }
